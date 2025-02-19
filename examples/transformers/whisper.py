@@ -1,15 +1,25 @@
-import base64
-import mlflow
-import transformers
 import requests
+import transformers
 
+import mlflow
 
 # Acquire an audio file
-audio = requests.get("https://www.nasa.gov/62283main_landing.wav").content
+resp = requests.get(
+    "https://github.com/mlflow/mlflow/raw/master/tests/datasets/apollo11_launch.wav"
+)
+resp.raise_for_status()
+audio = resp.content
 
 task = "automatic-speech-recognition"
+architecture = "openai/whisper-tiny"
 
-audio_transcription_pipeline = transformers.pipeline(task=task, model="openai/whisper-small")
+model = transformers.WhisperForConditionalGeneration.from_pretrained(architecture)
+tokenizer = transformers.WhisperTokenizer.from_pretrained(architecture)
+feature_extractor = transformers.WhisperFeatureExtractor.from_pretrained(architecture)
+model.generation_config.alignment_heads = [[2, 2], [3, 0], [3, 2], [3, 3], [3, 4], [3, 5]]
+audio_transcription_pipeline = transformers.pipeline(
+    task=task, model=model, tokenizer=tokenizer, feature_extractor=feature_extractor
+)
 
 # Note that if the input type is of raw binary audio, the generated signature will match the
 # one created here. For other supported types (i.e., numpy array of float32 with the

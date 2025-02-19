@@ -1,20 +1,15 @@
-# pylint: disable=arguments-differ
-# pylint: disable=unused-argument
-# pylint: disable=abstract-method
-
 import math
 import os
 
-import numpy as np
-import pandas as pd
 import lightning as L
+import pandas as pd
 import torch
 import torch.nn.functional as F
 import torchtext.datasets as td
 from lightning.pytorch.callbacks import (
     EarlyStopping,
-    ModelCheckpoint,
     LearningRateMonitor,
+    ModelCheckpoint,
 )
 from lightning.pytorch.cli import LightningCLI
 from sklearn.datasets import fetch_20newsgroups
@@ -26,7 +21,7 @@ from torch.utils.data.dataset import random_split
 from torchdata.datapipes.iter import IterDataPipe
 from torchtext.data.functional import to_map_style_dataset
 from torchtext.datasets import AG_NEWS
-from transformers import BertModel, BertTokenizer, AdamW
+from transformers import BertModel, BertTokenizer
 
 import mlflow.pytorch
 
@@ -52,11 +47,13 @@ class NewsDataset(IterDataPipe):
     def __init__(self, tokenizer, source, max_length, num_samples, dataset="20newsgroups"):
         """
         Custom Dataset - Converts the input text and label to tensor
-        :param tokenizer: bert tokenizer
-        :param source: data source - Either a dataframe or DataPipe
-        :param max_length: maximum length of the news text
-        :param num_samples: number of samples to load
-        :param dataset: Dataset type - 20newsgroups or ag_news
+
+        Args:
+            tokenizer: bert tokenizer
+            source: data source - Either a dataframe or DataPipe
+            max_length: maximum length of the news text
+            num_samples: number of samples to load
+            dataset: Dataset type - 20newsgroups or ag_news
         """
         super().__init__()
         self.source = source
@@ -130,7 +127,8 @@ class BertDataModule(L.LightningDataModule):
         """
         Split the data into train, test, validation data
 
-        :param stage: Stage - training or testing
+        Args:
+            stage: Stage - training or testing
         """
         self.tokenizer = BertTokenizer.from_pretrained(self.PRE_TRAINED_MODEL_NAME)
         if self.dataset == "20newsgroups":
@@ -174,19 +172,20 @@ class BertDataModule(L.LightningDataModule):
                 self.test_count = int(self.train_count / 10)
                 self.train_count = self.train_count - (self.val_count + self.test_count)
 
-            print("Number of samples used for training: {}".format(self.train_count))
-            print("Number of samples used for validation: {}".format(self.val_count))
-            print("Number of samples used for test: {}".format(self.test_count))
+            print(f"Number of samples used for training: {self.train_count}")
+            print(f"Number of samples used for validation: {self.val_count}")
+            print(f"Number of samples used for test: {self.test_count}")
 
     def create_data_loader(self, source, count):
         """
         Generic data loader function
 
-        :param df: Input dataframe
-        :param tokenizer: bert tokenizer
+        Args:
+            source: Input dataframe.
+            count: Number of samples to load.
 
-
-        :return: Returns the constructed dataloader
+        Returns:
+            Returns the constructed dataloader.
         """
         ds = NewsDataset(
             source=source,
@@ -200,19 +199,22 @@ class BertDataModule(L.LightningDataModule):
 
     def train_dataloader(self):
         """
-        :return: output - Train data loader for the given input
+        Returns:
+            output: Train data loader for the given input.
         """
         return self.create_data_loader(source=self.train_dataset, count=self.train_count)
 
     def val_dataloader(self):
         """
-        :return: output - Validation data loader for the given input
+        Returns:
+            output: Validation data loader for the given input.
         """
         return self.create_data_loader(source=self.val_dataset, count=self.val_count)
 
     def test_dataloader(self):
         """
-        :return: output - Test data loader for the given input
+        Returns:
+            output: Test data loader for the given input.
         """
         return self.create_data_loader(source=self.test_dataset, count=self.test_count)
 
@@ -248,10 +250,12 @@ class BertNewsClassifier(L.LightningModule):
 
     def forward(self, input_ids, attention_mask):
         """
-        :param input_ids: Input data
-        :param attention_maks: Attention mask value
+        Args:
+            input_ids: Input data.
+            attention_mask: Attention mask value.
 
-        :return: output - Type of news for the given news snippet
+        Returns:
+            output: Type of news for the given news snippet.
         """
         output = self.bert_model(input_ids=input_ids, attention_mask=attention_mask)
         output = F.relu(self.fc1(output.pooler_output))
@@ -263,10 +267,12 @@ class BertNewsClassifier(L.LightningModule):
         """
         Training the data as batches and returns training loss on each batch
 
-        :param train_batch Batch data
-        :param batch_idx: Batch indices
+        Args:
+            train_batch: Batch data
+            batch_idx: Batch indices
 
-        :return: output - Training loss
+        Returns:
+            output: Training loss
         """
         input_ids = train_batch["input_ids"].to(self.device)
         attention_mask = train_batch["attention_mask"].to(self.device)
@@ -280,10 +286,12 @@ class BertNewsClassifier(L.LightningModule):
         """
         Performs test and computes the accuracy of the model
 
-        :param test_batch: Batch data
-        :param batch_idx: Batch indices
+        Args:
+            test_batch: Batch data
+            batch_idx: Batch indices
 
-        :return: output - Testing accuracy
+        Returns:
+            output - Testing accuracy
         """
         input_ids = test_batch["input_ids"].to(self.device)
         attention_mask = test_batch["attention_mask"].to(self.device)
@@ -298,10 +306,12 @@ class BertNewsClassifier(L.LightningModule):
         """
         Performs validation of data in batches
 
-        :param val_batch: Batch data
-        :param batch_idx: Batch indices
+        Args:
+            val_batch: Batch data
+            batch_idx: Batch indices
 
-        :return: output - valid step loss
+        Returns:
+            output: valid step loss
         """
 
         input_ids = val_batch["input_ids"].to(self.device)
@@ -333,9 +343,10 @@ class BertNewsClassifier(L.LightningModule):
         """
         Initializes the optimizer and learning rate scheduler
 
-        :return: output - Initialized optimizer and scheduler
+        Returns:
+            output: Initialized optimizer and scheduler
         """
-        self.optimizer = AdamW(self.parameters(), lr=self.lr)
+        self.optimizer = torch.optim.AdamW(self.parameters(), lr=self.lr)
         self.scheduler = {
             "scheduler": torch.optim.lr_scheduler.ReduceLROnPlateau(
                 self.optimizer,

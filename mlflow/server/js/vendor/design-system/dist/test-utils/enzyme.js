@@ -1,5 +1,5 @@
-import { s as selectClasses, c as createMarkdownTable } from '../common-31040b66.js';
 import { act } from 'react-dom/test-utils';
+import { s as selectClasses, c as createMarkdownTable } from '../common-B8UocGP5.js';
 
 // eslint-disable-next-line @databricks/no-restricted-imports-regexp
 
@@ -34,17 +34,15 @@ function findAllByText(wrapper, text) {
     }
     return typeof text === 'string' ? nodeText === text : text.test(nodeText);
   });
-  const newWrappers = textNodes.map(n => {
-    if (n.name() === 'FormattedMessage') {
-      // Try not to return FormattedMessage since it breaks `simulate` due to a bug in `enzyme-adapter-react-17`
-      // Similar to https://github.com/wojtekmaj/enzyme-adapter-react-17/issues/45
-      const formattedMessageParents = n.parents();
-      return formattedMessageParents.length > 0 ? formattedMessageParents.first() : n;
-    } else {
-      return n;
+  const hostNodes = textNodes.map(n => {
+    // Traverse from the text node to the closest DOM node (aka host node)
+    let hostNode = n.parents().first();
+    while (typeof hostNode.type() !== 'string' && hostNode.parents().length > 0) {
+      hostNode = hostNode.parents().first();
     }
+    return hostNode;
   });
-  return newWrappers;
+  return hostNodes;
 }
 
 // We need to keep ref to original setTimeout to avoid SinonJS fake timers if enabled
@@ -59,7 +57,6 @@ const originalSetTimeout = window.setTimeout;
  * 1579cb44f9f175be1ec46087/src/wait-for.js#L15-L19
  */
 function copyStackTrace(target, source) {
-  // eslint-disable-next-line no-param-reassign
   target.stack = source.stack.replace(source.message, target.message);
 }
 /**
@@ -160,6 +157,19 @@ function findAllByRole(wrapper, role) {
   return wrapper.find(`[role="${role}"]`).hostNodes().map(n => n);
 }
 
+/**
+ * Finds a single element that has the specified role in the wrapper. If
+ * there are 0 or more than 1 element that have that role, an error
+ * is thrown. Returns the element in an enzyme wrapper.
+ */
+function findByRole(wrapper, role) {
+  const newWrappers = findAllByRole(wrapper, role);
+  if (newWrappers.length !== 1) {
+    throw new Error(`Expected to find 1 node but found ${newWrappers.length} nodes for role "${role}".\n${wrapper.debug()}`);
+  }
+  return newWrappers[0];
+}
+
 // eslint-disable-next-line @databricks/no-restricted-imports-regexp
 
 
@@ -196,6 +206,17 @@ function getLabelText(getSelect) {
   // For example, the input mirror is an empty span with some whitespace that is
   // nested under the selector but does not show up in the label text.
   return getSelect().find(`.${selectClasses.selector}`).text().trim();
+}
+
+/**
+ * Removes the `option` by clicking its "X" button. Can only be used with a <Select/>
+ * component with `mode="multiple"`. The provided strings must match the option label
+ * exactly.
+ */
+function removeMultiSelectOption(getSelect, option) {
+  const optionItem = findByText(getSelect().find(`.${selectClasses.selector}`), option).closest(`.${selectClasses.item}`);
+  const removeItem = optionItem.find(`.${selectClasses.removeItem}`).hostNodes();
+  removeItem.simulate('click');
 }
 
 /**
@@ -255,19 +276,53 @@ async function getAllOptions(getSelect) {
   return options;
 }
 
+/**
+ * Creates a new option for a Select with `mode="tags"` by typing it into the input,
+ * clicking on the option in the options list, and then closing the menu.
+ */
+async function createNewOption(getSelect, option) {
+  const selectInput = findByRole(getSelect(), 'combobox');
+  selectInput.simulate('change', {
+    target: {
+      value: option
+    }
+  });
+  const optionList = getSelect().find(`.${selectClasses.list}`);
+  const optionItem = findByText(optionList, option);
+  optionItem.simulate('click');
+  await closeMenu(getSelect);
+}
+
 var selectEvent = /*#__PURE__*/Object.freeze({
   __proto__: null,
   clearAll: clearAll,
   closeMenu: closeMenu,
+  createNewOption: createNewOption,
   getAllOptions: getAllOptions,
   getLabelText: getLabelText,
   multiSelect: multiSelect,
   openMenu: openMenu,
+  removeMultiSelectOption: removeMultiSelectOption,
   singleSelect: singleSelect
 });
 
 // eslint-disable-next-line @databricks/no-restricted-imports-regexp
 
+function getColumnHeaderIndex(tableWrapper, columnHeaderName) {
+  const columnHeaders = findAllByRole(tableWrapper, 'columnheader');
+  const columnHeaderIndex = columnHeaders.findIndex(n => {
+    try {
+      findByText(n, columnHeaderName);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+  if (columnHeaderIndex === -1) {
+    throw new Error(`Unable to find a column with name "${columnHeaderName}"\n${tableWrapper.debug()}`);
+  }
+  return columnHeaderIndex;
+}
 
 /**
  * Returns the table row that contains the specified `cellText`. The `cellText`
@@ -285,23 +340,7 @@ function getTableRowByCellText(tableWrapper, cellText) {
   let {
     columnHeaderName
   } = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : {};
-  let columnHeaderIndex;
-  if (columnHeaderName === undefined) {
-    columnHeaderIndex = 0;
-  } else {
-    const columnHeaders = findAllByRole(tableWrapper, 'columnheader');
-    columnHeaderIndex = columnHeaders.findIndex(n => {
-      try {
-        findByText(n, columnHeaderName);
-        return true;
-      } catch {
-        return false;
-      }
-    });
-    if (columnHeaderIndex === -1) {
-      throw new Error(`Unable to find a column with name "${columnHeaderName}"\n${tableWrapper.debug()}`);
-    }
-  }
+  const columnHeaderIndex = columnHeaderName === undefined ? 0 : getColumnHeaderIndex(tableWrapper, columnHeaderName);
   const matchingRows = findAllByRole(tableWrapper, 'row')
   // Skip first row (table header)
   .slice(1).filter(row => {
@@ -384,6 +423,49 @@ function getTableRows(tableWrapper) {
   };
 }
 
+/**
+ * Returns the table cell in the specified table row corresponding to the given
+ * `columnHeaderName`. This is useful for checking that a row has a particular value
+ * for a given column, especially when there are duplicate values in the column.
+ *
+ * @example
+ * The HTML table:
+ * ```jsx
+ *   <Table>
+ *     <TableRow isHeader>
+ *       <TableHeader>Name</TableHeader>
+ *       <TableHeader>Age</TableHeader>
+ *     </TableRow>
+ *     <TableRow>
+ *       <TableCell>Alex</TableCell>
+ *       <TableCell>25</TableCell>
+ *     </TableRow>
+ *     <TableRow>
+ *       <TableCell>Brenda</TableCell>
+ *       <TableCell>39</TableCell>
+ *     </TableRow>
+ *     <TableRow>
+ *       <TableCell>Carlos</TableCell>
+ *       <TableCell>39</TableCell>
+ *     </TableRow>
+ *   </Table>
+ * ```
+ *
+ * ```js
+ * const result = getTableCellInRow(wrapper, { cellText: 'Carlos' }, 'Age');
+ * expect(result.textContent).toEqual('39');
+ * ```
+ */
+function getTableCellInRow(tableWrapper, row, columnHeaderName) {
+  const tableRowWrapper = getTableRowByCellText(tableWrapper, row.cellText, {
+    columnHeaderName: row.columnHeaderName
+  });
+  const columnHeaderIndex = getColumnHeaderIndex(tableWrapper, columnHeaderName);
+  const cells = findAllByRole(tableRowWrapper, 'cell');
+  const cell = cells[columnHeaderIndex];
+  return cell;
+}
+
 // eslint-disable-next-line @databricks/no-restricted-imports-regexp
 
 /**
@@ -398,5 +480,5 @@ const openDropdownMenu = dropdownButton => {
   });
 };
 
-export { getTableRowByCellText, getTableRows, openDropdownMenu, selectEvent, toMarkdownTable };
+export { getTableCellInRow, getTableRowByCellText, getTableRows, openDropdownMenu, selectEvent, toMarkdownTable };
 //# sourceMappingURL=enzyme.js.map

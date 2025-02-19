@@ -29,8 +29,42 @@ module.exports = async ({ context, github }) => {
   const { user, body } = context.payload.pull_request;
   const messages = [];
 
+  const title = "&#x1F6E0 DevTools &#x1F6E0";
+  if (body && !body.includes(title)) {
+    const codespacesBadge = `[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/${user.login}/mlflow/pull/${issue_number}?quickstart=1)`;
+    const newSection = `
+<details><summary>${title}</summary>
+<p>
+
+${codespacesBadge}
+
+#### Install mlflow from this PR
+
+\`\`\`
+# Use \`%sh\` to run this command on Databricks
+OPTIONS=$(if pip freeze | grep -q 'mlflow @ git+https://github.com/mlflow/mlflow.git'; then echo '--force-reinstall --no-deps'; fi)
+pip install $OPTIONS git+https://github.com/mlflow/mlflow.git@refs/pull/${issue_number}/merge
+\`\`\`
+
+#### Checkout with GitHub CLI
+
+\`\`\`
+gh pr checkout ${issue_number}
+\`\`\`
+
+</p>
+</details>
+`.trim();
+    await github.rest.pulls.update({
+      owner,
+      repo,
+      pull_number: issue_number,
+      body: `${newSection}\n\n${body}`,
+    });
+  }
+
   const dcoCheck = await getDcoCheck(github, owner, repo, sha);
-  if (dcoCheck.conclusion !== "success") {
+  if (dcoCheck && dcoCheck.conclusion !== "success") {
     messages.push(
       "#### &#x26a0; DCO check\n\n" +
         "The DCO check failed. " +

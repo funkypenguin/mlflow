@@ -1,56 +1,31 @@
-import os
 import pytest
 
 from mlflow.exceptions import MlflowException
-from mlflow.server.auth import (
-    _AUTH_CONFIG_PATH_ENV_VAR,
-)
-from mlflow.server.auth.config import read_auth_config
-from mlflow.server.auth.entities import User, ExperimentPermission, RegisteredModelPermission
-from mlflow.server.auth.sqlalchemy_store import (
-    SqlUser,
-    SqlExperimentPermission,
-    SqlRegisteredModelPermission,
-    SqlAlchemyStore,
-)
-from mlflow.server.auth.permissions import (
-    READ,
-    EDIT,
-    ALL_PERMISSIONS,
-)
 from mlflow.protos.databricks_pb2 import (
-    ErrorCode,
     INVALID_PARAMETER_VALUE,
     RESOURCE_ALREADY_EXISTS,
     RESOURCE_DOES_NOT_EXIST,
+    ErrorCode,
 )
+from mlflow.server.auth.entities import ExperimentPermission, RegisteredModelPermission, User
+from mlflow.server.auth.permissions import (
+    ALL_PERMISSIONS,
+    EDIT,
+    MANAGE,
+    READ,
+)
+from mlflow.server.auth.sqlalchemy_store import SqlAlchemyStore
+
 from tests.helper_functions import random_str
 
 pytestmark = pytest.mark.notrackingurimock
 
 
-def _get_db_uri_from_env_var():
-    auth_config_path = os.environ.get(_AUTH_CONFIG_PATH_ENV_VAR)
-    if auth_config_path:
-        auth_config = read_auth_config(auth_config_path)
-        return auth_config.database_uri
-
-
 @pytest.fixture
 def store(tmp_sqlite_uri):
-    db_uri_from_env_var = _get_db_uri_from_env_var()
     store = SqlAlchemyStore()
-    store.init_db(db_uri_from_env_var if db_uri_from_env_var else tmp_sqlite_uri)
-    yield store
-
-    if db_uri_from_env_var is not None:
-        with store.ManagedSessionMaker() as session:
-            for model in (
-                SqlRegisteredModelPermission,
-                SqlExperimentPermission,
-                SqlUser,
-            ):
-                session.query(model).delete()
+    store.init_db(tmp_sqlite_uri)
+    return store
 
 
 def _user_maker(store, username, password, is_admin=False):
@@ -450,3 +425,32 @@ def test_delete_registered_model_permission(store):
     ) as exception_context:
         store.get_registered_model_permission(name1, username1)
     assert exception_context.value.error_code == ErrorCode.Name(RESOURCE_DOES_NOT_EXIST)
+
+
+def test_rename_registered_model_permission(store):
+    # create 2 users and create 2 permission for the model registry with the same name
+    model_name = random_str()
+    username1 = random_str()
+    password1 = random_str()
+    _user_maker(store, username1, password1)
+    _rmp_maker(store, model_name, username1, MANAGE.name)
+
+    username2 = random_str()
+    password2 = random_str()
+    _user_maker(store, username2, password2)
+    _rmp_maker(store, model_name, username2, READ.name)
+
+    new_name = random_str()
+
+    store.rename_registered_model_permissions(model_name, new_name)
+
+    # get permission by model registry new name and all user must have the same new name
+    perm_user_1 = store.get_registered_model_permission(new_name, username1)
+    perm_user_2 = store.get_registered_model_permission(new_name, username2)
+    assert isinstance(perm_user_1, RegisteredModelPermission)
+    assert isinstance(perm_user_2, RegisteredModelPermission)
+    assert perm_user_1.name == new_name
+    assert perm_user_2.name == new_name
+
+    assert perm_user_1.permission == MANAGE.name
+    assert perm_user_2.permission == READ.name

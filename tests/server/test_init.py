@@ -1,12 +1,13 @@
+import sys
 from unittest import mock
 
 import pytest
 
-from mlflow.exceptions import MlflowException
 from mlflow import server
+from mlflow.exceptions import MlflowException
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_exec_cmd():
     with mock.patch("mlflow.server._exec_cmd") as m:
         yield m
@@ -23,8 +24,24 @@ def test_find_app_non_existing_app():
 
 
 def test_build_waitress_command():
-    assert server._build_waitress_command("", "localhost", "5000", f"{server.__name__}:app") == [
-        "waitress-serve",
+    assert server._build_waitress_command(
+        "", "localhost", "5000", f"{server.__name__}:app", is_factory=True
+    ) == [
+        sys.executable,
+        "-m",
+        "waitress",
+        "--host=localhost",
+        "--port=5000",
+        "--ident=mlflow",
+        "--call",
+        "mlflow.server:app",
+    ]
+    assert server._build_waitress_command(
+        "", "localhost", "5000", f"{server.__name__}:app", is_factory=False
+    ) == [
+        sys.executable,
+        "-m",
+        "waitress",
         "--host=localhost",
         "--port=5000",
         "--ident=mlflow",
@@ -35,7 +52,16 @@ def test_build_waitress_command():
 def test_build_gunicorn_command():
     assert server._build_gunicorn_command(
         "", "localhost", "5000", "4", f"{server.__name__}:app"
-    ) == ["gunicorn", "-b", "localhost:5000", "-w", "4", "mlflow.server:app"]
+    ) == [
+        sys.executable,
+        "-m",
+        "gunicorn",
+        "-b",
+        "localhost:5000",
+        "-w",
+        "4",
+        "mlflow.server:app",
+    ]
 
 
 def test_run_server(mock_exec_cmd):

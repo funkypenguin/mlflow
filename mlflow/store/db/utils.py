@@ -1,12 +1,11 @@
+import logging
 import os
 import time
-
 from contextlib import contextmanager
-import logging
 
-from alembic.migration import MigrationContext  # pylint: disable=import-error
-from alembic.script import ScriptDirectory
 import sqlalchemy
+from alembic.migration import MigrationContext
+from alembic.script import ScriptDirectory
 from sqlalchemy import sql
 
 # We need to import sqlalchemy.pool to convert poolclass string to class object
@@ -20,38 +19,43 @@ from sqlalchemy.pool import (
     StaticPool,
 )
 
-
+from mlflow.environment_variables import (
+    MLFLOW_SQLALCHEMYSTORE_ECHO,
+    MLFLOW_SQLALCHEMYSTORE_MAX_OVERFLOW,
+    MLFLOW_SQLALCHEMYSTORE_POOL_RECYCLE,
+    MLFLOW_SQLALCHEMYSTORE_POOL_SIZE,
+    MLFLOW_SQLALCHEMYSTORE_POOLCLASS,
+)
 from mlflow.exceptions import MlflowException
-from mlflow.store.tracking.dbmodels.initial_models import Base as InitialBase
-from mlflow.store.tracking.dbmodels.models import (
-    SqlExperiment,
-    SqlRun,
-    SqlMetric,
-    SqlParam,
-    SqlTag,
-    SqlExperimentTag,
-    SqlLatestMetric,
-)
-from mlflow.store.model_registry.dbmodels.models import (
-    SqlRegisteredModel,
-    SqlModelVersion,
-    SqlRegisteredModelTag,
-    SqlModelVersionTag,
-    SqlRegisteredModelAlias,
-)
 from mlflow.protos.databricks_pb2 import BAD_REQUEST, INTERNAL_ERROR, TEMPORARILY_UNAVAILABLE
 from mlflow.store.db.db_types import SQLITE
-from mlflow.environment_variables import (
-    MLFLOW_SQLALCHEMYSTORE_POOL_SIZE,
-    MLFLOW_SQLALCHEMYSTORE_POOL_RECYCLE,
-    MLFLOW_SQLALCHEMYSTORE_MAX_OVERFLOW,
-    MLFLOW_SQLALCHEMYSTORE_ECHO,
-    MLFLOW_SQLALCHEMYSTORE_POOLCLASS,
+from mlflow.store.model_registry.dbmodels.models import (
+    SqlModelVersion,
+    SqlModelVersionTag,
+    SqlRegisteredModel,
+    SqlRegisteredModelAlias,
+    SqlRegisteredModelTag,
+)
+from mlflow.store.tracking.dbmodels.initial_models import Base as InitialBase
+from mlflow.store.tracking.dbmodels.models import (
+    SqlDataset,
+    SqlExperiment,
+    SqlExperimentTag,
+    SqlInput,
+    SqlInputTag,
+    SqlLatestMetric,
+    SqlMetric,
+    SqlParam,
+    SqlRun,
+    SqlTag,
+    SqlTraceInfo,
+    SqlTraceRequestMetadata,
+    SqlTraceTag,
 )
 
 _logger = logging.getLogger(__name__)
 
-MAX_RETRY_COUNT = 15
+MAX_RETRY_COUNT = 10
 
 
 def _get_package_dir():
@@ -61,12 +65,12 @@ def _get_package_dir():
 
 
 def _all_tables_exist(engine):
-    return set(
+    return {
         t
         for t in sqlalchemy.inspect(engine).get_table_names()
         # Filter out alembic tables
         if not t.startswith("alembic_")
-    ) == {
+    } == {
         SqlExperiment.__tablename__,
         SqlRun.__tablename__,
         SqlMetric.__tablename__,
@@ -79,6 +83,12 @@ def _all_tables_exist(engine):
         SqlRegisteredModelTag.__tablename__,
         SqlModelVersionTag.__tablename__,
         SqlRegisteredModelAlias.__tablename__,
+        SqlDataset.__tablename__,
+        SqlInput.__tablename__,
+        SqlInputTag.__tablename__,
+        SqlTraceInfo.__tablename__,
+        SqlTraceTag.__tablename__,
+        SqlTraceRequestMetadata.__tablename__,
     }
 
 
@@ -96,8 +106,8 @@ def _get_latest_schema_revision():
     heads = script.get_heads()
     if len(heads) != 1:
         raise MlflowException(
-            "Migration script directory was in unexpected state. Got %s head "
-            "database versions but expected only 1. Found versions: %s" % (len(heads), heads)
+            f"Migration script directory was in unexpected state. Got {len(heads)} head "
+            f"database versions but expected only 1. Found versions: {heads}"
         )
     return heads[0]
 
@@ -107,11 +117,12 @@ def _verify_schema(engine):
     current_rev = _get_schema_version(engine)
     if current_rev != head_revision:
         raise MlflowException(
-            "Detected out-of-date database schema (found version %s, but expected %s). "
-            "Take a backup of your database, then run 'mlflow db upgrade <database_uri>' "
+            f"Detected out-of-date database schema (found version {current_rev}, "
+            f"but expected {head_revision}). Take a backup of your database, then run "
+            "'mlflow db upgrade <database_uri>' "
             "to migrate your database to the latest schema. NOTE: schema migration may "
             "result in database downtime - please consult your database's documentation for "
-            "more detail." % (current_rev, head_revision)
+            "more detail."
         )
 
 
@@ -127,32 +138,30 @@ def _get_managed_session_maker(SessionMaker, db_type):
     @contextmanager
     def make_managed_session():
         """Provide a transactional scope around a series of operations."""
-        session = SessionMaker()
-        try:
-            if db_type == SQLITE:
-                session.execute(sql.text("PRAGMA foreign_keys = ON;"))
-                session.execute(sql.text("PRAGMA busy_timeout = 20000;"))
-                session.execute(sql.text("PRAGMA case_sensitive_like = true;"))
-            yield session
-            session.commit()
-        except MlflowException:
-            session.rollback()
-            raise
-        except sqlalchemy.exc.OperationalError as e:
-            session.rollback()
-            _logger.exception(
-                "SQLAlchemy database error. The following exception is caught.\n%s",
-                e,
-            )
-            raise MlflowException(message=e, error_code=TEMPORARILY_UNAVAILABLE)
-        except sqlalchemy.exc.SQLAlchemyError as e:
-            session.rollback()
-            raise MlflowException(message=e, error_code=BAD_REQUEST)
-        except Exception as e:
-            session.rollback()
-            raise MlflowException(message=e, error_code=INTERNAL_ERROR)
-        finally:
-            session.close()
+        with SessionMaker() as session:
+            try:
+                if db_type == SQLITE:
+                    session.execute(sql.text("PRAGMA foreign_keys = ON;"))
+                    session.execute(sql.text("PRAGMA busy_timeout = 20000;"))
+                    session.execute(sql.text("PRAGMA case_sensitive_like = true;"))
+                yield session
+                session.commit()
+            except MlflowException:
+                session.rollback()
+                raise
+            except sqlalchemy.exc.OperationalError as e:
+                session.rollback()
+                _logger.exception(
+                    "SQLAlchemy database error. The following exception is caught.\n%s",
+                    e,
+                )
+                raise MlflowException(message=e, error_code=TEMPORARILY_UNAVAILABLE)
+            except sqlalchemy.exc.SQLAlchemyError as e:
+                session.rollback()
+                raise MlflowException(message=e, error_code=BAD_REQUEST)
+            except Exception as e:
+                session.rollback()
+                raise MlflowException(message=e, error_code=INTERNAL_ERROR)
 
     return make_managed_session
 
@@ -162,13 +171,14 @@ def _get_alembic_config(db_url, alembic_dir=None):
     Constructs an alembic Config object referencing the specified database and migration script
     directory.
 
-    :param db_url Database URL, like sqlite:///<absolute-path-to-local-db-file>. See
-    https://docs.sqlalchemy.org/en/13/core/engines.html#database-urls for a full list of valid
-    database URLs.
-    :param alembic_dir Path to migration script directory. Uses canonical migration script
-    directory under mlflow/alembic if unspecified. TODO: remove this argument in MLflow 1.1, as
-    it's only used to run special migrations for pre-1.0 users to remove duplicate constraint
-    names.
+    Args:
+        db_url: Database URL, like sqlite:///<absolute-path-to-local-db-file>. See
+            https://docs.sqlalchemy.org/en/13/core/engines.html#database-urls for a full list of
+            valid database URLs.
+        alembic_dir: Path to migration script directory. Uses canonical migration script
+            directory under mlflow/alembic if unspecified. TODO: remove this argument in MLflow 1.1,
+            as it's only used to run special migrations for pre-1.0 users to remove duplicate
+            constraint names.
     """
     from alembic.config import Config
 
@@ -186,15 +196,16 @@ def _get_alembic_config(db_url, alembic_dir=None):
     return config
 
 
-def _upgrade_db(engine):
+def _upgrade_db(engine):  # noqa: D417
     """
     Upgrade the schema of an MLflow tracking database to the latest supported version.
     Note that schema migrations can be slow and are not guaranteed to be transactional -
     we recommend taking a backup of your database before running migrations.
 
-    :param url Database URL, like sqlite:///<absolute-path-to-local-db-file>. See
-    https://docs.sqlalchemy.org/en/13/core/engines.html#database-urls for a full list of valid
-    database URLs.
+    Args:
+        url: Database URL, like sqlite:///<absolute-path-to-local-db-file>. See
+            https://docs.sqlalchemy.org/en/13/core/engines.html#database-urls for a full list of
+            valid database URLs.
     """
     # alembic adds significant import time, so we import it lazily
     from alembic import command

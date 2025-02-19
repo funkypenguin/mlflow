@@ -34,28 +34,8 @@ class TextArtifactTooLargeError extends Error {}
  * Async function to fetch and return the specified text artifact.
  * Avoids unnecessary conversion to blob, parses chunked responses directly to text.
  */
-export const getArtifactChunkedText = async (
-  artifactLocation: string,
-  limitBytes: number = 25 * 1024 * 1024,
-) =>
+export const getArtifactChunkedText = async (artifactLocation: string) =>
   new Promise<string>(async (resolve, reject) => {
-    const headRequest = new Request(artifactLocation, {
-      method: 'HEAD',
-      redirect: 'follow',
-      headers: new Headers(getDefaultHeaders(document.cookie) as HeadersInit),
-    });
-    const headResponse = await fetch(headRequest);
-    const contentLength = parseInt(headResponse.headers.get('content-length') || '0', 10) || 0;
-
-    if (contentLength > limitBytes) {
-      reject(
-        new TextArtifactTooLargeError(
-          `The artifact is too large, it should not exceed ${limitBytes} bytes`,
-        ),
-      );
-      return;
-    }
-
     const getArtifactRequest = new Request(artifactLocation, {
       method: HTTPMethods.GET,
       redirect: 'follow',
@@ -96,8 +76,8 @@ export const getArtifactChunkedText = async (
  * the raw content converted to text of the artifact if the fetch is
  * successful, and rejects otherwise
  */
-export function getArtifactContent(artifactLocation: any, isBinary = false) {
-  return new Promise(async (resolve, reject) => {
+export function getArtifactContent<R = unknown>(artifactLocation: string, isBinary = false): Promise<R> {
+  return new Promise<R>(async (resolve, reject) => {
     try {
       const blob = await getArtifactBlob(artifactLocation);
 
@@ -116,6 +96,7 @@ export function getArtifactContent(artifactLocation: any, isBinary = false) {
         fileReader.readAsText(blob);
       }
     } catch (error) {
+      // eslint-disable-next-line no-console -- TODO(FEINF-3587)
       console.error(error);
       reject(error);
     }
@@ -129,3 +110,12 @@ export function getArtifactContent(artifactLocation: any, isBinary = false) {
 export function getArtifactBytesContent(artifactLocation: any) {
   return getArtifactContent(artifactLocation, true);
 }
+
+export const getLoggedModelArtifactLocationUrl = (path: string, loggedModelId: string) => {
+  return `logged-models/${loggedModelId}/artifacts/files?artifact_file_path=${encodeURIComponent(path)}`;
+};
+
+export const getArtifactLocationUrl = (path: string, runUuid: string) => {
+  const artifactEndpointPath = 'get-artifact';
+  return `${artifactEndpointPath}?path=${encodeURIComponent(path)}&run_uuid=${encodeURIComponent(runUuid)}`;
+};

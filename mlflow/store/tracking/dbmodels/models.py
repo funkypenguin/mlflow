@@ -1,36 +1,40 @@
-from sqlalchemy.orm import relationship, backref
 import sqlalchemy as sa
 from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    CheckConstraint,
     Column,
+    ForeignKey,
+    Index,
+    Integer,
+    PrimaryKeyConstraint,
     String,
     UnicodeText,
-    ForeignKey,
-    Integer,
-    CheckConstraint,
-    BigInteger,
-    PrimaryKeyConstraint,
-    Boolean,
-    Index,
 )
+from sqlalchemy.orm import backref, relationship
+
 from mlflow.entities import (
+    Dataset,
     Experiment,
-    RunTag,
+    ExperimentTag,
+    InputTag,
     Metric,
     Param,
+    Run,
     RunData,
     RunInfo,
-    SourceType,
     RunStatus,
-    Run,
+    RunTag,
+    SourceType,
+    TraceInfo,
     ViewType,
-    ExperimentTag,
-    Dataset,
-    InputTag,
 )
 from mlflow.entities.lifecycle_stage import LifecycleStage
+from mlflow.entities.trace_info import TraceInfo
+from mlflow.entities.trace_status import TraceStatus
 from mlflow.store.db.base_sql_model import Base
 from mlflow.utils.mlflow_tags import _get_run_name_from_tags
-from mlflow.utils.time_utils import get_current_time_millis
+from mlflow.utils.time import get_current_time_millis
 
 SourceTypes = [
     SourceType.to_string(SourceType.NOTEBOOK),
@@ -93,13 +97,14 @@ class SqlExperiment(Base):
     )
 
     def __repr__(self):
-        return "<SqlExperiment ({}, {})>".format(self.experiment_id, self.name)
+        return f"<SqlExperiment ({self.experiment_id}, {self.name})>"
 
     def to_mlflow_entity(self):
         """
         Convert DB model to corresponding MLflow entity.
 
-        :return: :py:class:`mlflow.entities.Experiment`.
+        Returns:
+            :py:class:`mlflow.entities.Experiment`.
         """
         return Experiment(
             experiment_id=str(self.experiment_id),
@@ -209,7 +214,8 @@ class SqlRun(Base):
         """
         Convert DB model to corresponding MLflow entity.
 
-        :return: :py:class:`mlflow.entities.Run`.
+        Returns:
+            mlflow.entities.Run: Description of the return value.
         """
         run_info = RunInfo(
             run_uuid=self.run_uuid,
@@ -266,13 +272,14 @@ class SqlExperimentTag(Base):
     __table_args__ = (PrimaryKeyConstraint("key", "experiment_id", name="experiment_tag_pk"),)
 
     def __repr__(self):
-        return "<SqlExperimentTag({}, {})>".format(self.key, self.value)
+        return f"<SqlExperimentTag({self.key}, {self.value})>"
 
     def to_mlflow_entity(self):
         """
         Convert DB model to corresponding MLflow entity.
 
-        :return: :py:class:`mlflow.entities.RunTag`.
+        Returns:
+            mlflow.entities.RunTag: Description of the return value.
         """
         return ExperimentTag(key=self.key, value=self.value)
 
@@ -292,9 +299,9 @@ class SqlTag(Base):
     """
     Tag key: `String` (limit 250 characters). *Primary Key* for ``tags`` table.
     """
-    value = Column(String(5000), nullable=True)
+    value = Column(String(8000), nullable=True)
     """
-    Value associated with tag: `String` (limit 250 characters). Could be *null*.
+    Value associated with tag: `String` (limit 8000 characters). Could be *null*.
     """
     run_uuid = Column(String(32), ForeignKey("runs.run_uuid"))
     """
@@ -306,13 +313,14 @@ class SqlTag(Base):
     """
 
     def __repr__(self):
-        return "<SqlRunTag({}, {})>".format(self.key, self.value)
+        return f"<SqlRunTag({self.key}, {self.value})>"
 
     def to_mlflow_entity(self):
         """
         Convert DB model to corresponding MLflow entity.
 
-        :return: :py:class:`mlflow.entities.RunTag`.
+        Returns:
+            :py:class:`mlflow.entities.RunTag`.
         """
         return RunTag(key=self.key, value=self.value)
 
@@ -358,13 +366,14 @@ class SqlMetric(Base):
     """
 
     def __repr__(self):
-        return "<SqlMetric({}, {}, {}, {})>".format(self.key, self.value, self.timestamp, self.step)
+        return f"<SqlMetric({self.key}, {self.value}, {self.timestamp}, {self.step})>"
 
     def to_mlflow_entity(self):
         """
         Convert DB model to corresponding MLflow entity.
 
-        :return: :py:class:`mlflow.entities.Metric`.
+        Returns:
+            mlflow.entities.Metric: Description of the return value.
         """
         return Metric(
             key=self.key,
@@ -413,15 +422,14 @@ class SqlLatestMetric(Base):
     """
 
     def __repr__(self):
-        return "<SqlLatestMetric({}, {}, {}, {})>".format(
-            self.key, self.value, self.timestamp, self.step
-        )
+        return f"<SqlLatestMetric({self.key}, {self.value}, {self.timestamp}, {self.step})>"
 
     def to_mlflow_entity(self):
         """
         Convert DB model to corresponding MLflow entity.
 
-        :return: :py:class:`mlflow.entities.Metric`.
+        Returns:
+            mlflow.entities.Metric: Description of the return value.
         """
         return Metric(
             key=self.key,
@@ -442,9 +450,9 @@ class SqlParam(Base):
     """
     Param key: `String` (limit 250 characters). Part of *Primary Key* for ``params`` table.
     """
-    value = Column(String(500), nullable=False)
+    value = Column(String(8000), nullable=False)
     """
-    Param value: `String` (limit 500 characters). Defined as *Non-null* in schema.
+    Param value: `String` (limit 8000 characters). Defined as *Non-null* in schema.
     """
     run_uuid = Column(String(32), ForeignKey("runs.run_uuid"))
     """
@@ -457,13 +465,14 @@ class SqlParam(Base):
     """
 
     def __repr__(self):
-        return "<SqlParam({}, {})>".format(self.key, self.value)
+        return f"<SqlParam({self.key}, {self.value})>"
 
     def to_mlflow_entity(self):
         """
         Convert DB model to corresponding MLflow entity.
 
-        :return: :py:class:`mlflow.entities.Param`.
+        Returns:
+            mlflow.entities.Param: Description of the return value.
         """
         return Param(key=self.key, value=self.value)
 
@@ -485,7 +494,7 @@ class SqlDataset(Base):
     Dataset UUID: `String` (limit 36 characters). Defined as *Non-null* in schema.
     Part of *Primary Key* for ``datasets`` table.
     """
-    experiment_id = Column(Integer, ForeignKey("experiments.experiment_id"))
+    experiment_id = Column(Integer, ForeignKey("experiments.experiment_id", ondelete="CASCADE"))
     """
     Experiment ID to which this dataset belongs: *Foreign Key* into ``experiments`` table.
     """
@@ -532,7 +541,8 @@ class SqlDataset(Base):
         """
         Convert DB model to corresponding MLflow entity.
 
-        :return: :py:class:`mlflow.entities.Dataset`.
+        Returns:
+            mlflow.entities.Dataset.
         """
         return Dataset(
             name=self.name,
@@ -615,12 +625,131 @@ class SqlInputTag(Base):
     """
 
     def __repr__(self):
-        return "<SqlInputTag ({}, {}, {})>".format(self.input_uuid, self.name, self.value)
+        return f"<SqlInputTag ({self.input_uuid}, {self.name}, {self.value})>"
 
     def to_mlflow_entity(self):
         """
         Convert DB model to corresponding MLflow entity.
 
-        :return: :py:class:`mlflow.entities.InputTag`.
+        Returns:
+            mlflow.entities.InputTag: Description of the return value.
         """
         return InputTag(key=self.name, value=self.value)
+
+
+#######################################################################################
+# Below are Tracing models. We may refactor them to be in a separate module in the future.
+#######################################################################################
+
+
+class SqlTraceInfo(Base):
+    __tablename__ = "trace_info"
+
+    request_id = Column(String(50), nullable=False)
+    """
+    Request ID: `String` (limit 50 characters). *Primary Key* for ``trace_info`` table.
+    """
+    experiment_id = Column(Integer, ForeignKey("experiments.experiment_id"), nullable=False)
+    """
+    Experiment ID to which this trace belongs: *Foreign Key* into ``experiments`` table.
+    """
+    timestamp_ms = Column(BigInteger, nullable=False)
+    """
+    Start time of the trace, in milliseconds.
+    """
+    execution_time_ms = Column(BigInteger, nullable=True)
+    """
+    Duration of the trace, in milliseconds. Could be *null* if the trace is still in progress
+    or not ended correctly for some reason.
+    """
+    status = Column(String(50), nullable=False)
+    """
+    Status of the trace. The values are defined in
+    :py:class:`mlflow.entities.trace_status.TraceStatus` enum but we don't enforce
+    constraint at DB level.
+    """
+
+    __table_args__ = (
+        PrimaryKeyConstraint("request_id", name="trace_info_pk"),
+        # The most frequent query will be get all traces in an experiment sorted by timestamp desc,
+        # which is the default view in the UI. Also every search query should have experiment_id(s)
+        # in the where clause.
+        Index(f"index_{__tablename__}_experiment_id_timestamp_ms", "experiment_id", "timestamp_ms"),
+    )
+
+    def to_mlflow_entity(self):
+        """
+        Convert DB model to corresponding MLflow entity.
+
+        Returns:
+            :py:class:`mlflow.entities.TraceInfo` object.
+        """
+        return TraceInfo(
+            request_id=self.request_id,
+            experiment_id=str(self.experiment_id),
+            timestamp_ms=self.timestamp_ms,
+            execution_time_ms=self.execution_time_ms,
+            status=TraceStatus(self.status),
+            tags={t.key: t.value for t in self.tags},
+            request_metadata={m.key: m.value for m in self.request_metadata},
+        )
+
+
+class SqlTraceTag(Base):
+    __tablename__ = "trace_tags"
+
+    key = Column(String(250))
+    """
+    Tag key: `String` (limit 250 characters).
+    """
+    value = Column(String(8000), nullable=True)
+    """
+    Value associated with tag: `String` (limit 250 characters). Could be *null*.
+    """
+    request_id = Column(
+        String(50), ForeignKey("trace_info.request_id", ondelete="CASCADE"), nullable=False
+    )
+    """
+    Request ID to which this tag belongs: *Foreign Key* into ``trace_info`` table.
+    """
+    trace_info = relationship("SqlTraceInfo", backref=backref("tags", cascade="all"))
+    """
+    SQLAlchemy relationship (many:one) with
+    :py:class:`mlflow.store.dbmodels.models.SqlTraceInfo`.
+    """
+
+    # Key is unique within a request_id
+    __table_args__ = (
+        PrimaryKeyConstraint("request_id", "key", name="trace_tag_pk"),
+        Index(f"index_{__tablename__}_request_id"),
+    )
+
+
+class SqlTraceRequestMetadata(Base):
+    __tablename__ = "trace_request_metadata"
+
+    key = Column(String(250))
+    """
+    Metadata key: `String` (limit 250 characters).
+    """
+    value = Column(String(8000), nullable=True)
+    """
+    Value associated with metadata: `String` (limit 250 characters). Could be *null*.
+    """
+    request_id = Column(
+        String(50), ForeignKey("trace_info.request_id", ondelete="CASCADE"), nullable=False
+    )
+    """
+    Request ID to which this metadata belongs: *Foreign Key* into ``trace_info`` table.
+    """
+    trace_info = relationship("SqlTraceInfo", backref=backref("request_metadata", cascade="all"))
+    """
+    SQLAlchemy relationship (many:one) with
+    :py:class:`mlflow.store.dbmodels.models.SqlTraceInfo`.
+    """
+
+    # Key is unique within a request_id
+    __table_args__ = (
+        PrimaryKeyConstraint("request_id", "key", name="trace_request_metadata_pk"),
+        Index(f"index_{__tablename__}_request_id"),
+    )

@@ -1,16 +1,16 @@
 import os
 
 import openai
-import mlflow
-import pandas as pd
 from pyspark.sql import SparkSession
+
+import mlflow
 
 assert "OPENAI_API_KEY" in os.environ, "Please set the OPENAI_API_KEY environment variable."
 
 with mlflow.start_run():
     model_info = mlflow.openai.log_model(
-        model="gpt-3.5-turbo",
-        task=openai.ChatCompletion,
+        model="gpt-4o-mini",
+        task=openai.chat.completions,
         messages=[{"role": "user", "content": "Tell me a {adjective} joke about {animal}."}],
         artifact_path="model",
     )

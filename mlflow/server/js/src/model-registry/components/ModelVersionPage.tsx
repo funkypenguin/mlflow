@@ -9,6 +9,7 @@ import React from 'react';
 import { connect } from 'react-redux';
 import {
   getModelVersionApi,
+  getRegisteredModelApi,
   updateModelVersionApi,
   deleteModelVersionApi,
   transitionModelVersionStageApi,
@@ -18,19 +19,29 @@ import {
 import { getRunApi } from '../../experiment-tracking/actions';
 import { getModelVersion, getModelVersionSchemas } from '../reducers';
 import { ModelVersionView } from './ModelVersionView';
-import { ActivityTypes, MODEL_VERSION_STATUS_POLL_INTERVAL as POLL_INTERVAL } from '../constants';
+import {
+  ActivityTypes,
+  PendingModelVersionActivity,
+  MODEL_VERSION_STATUS_POLL_INTERVAL as POLL_INTERVAL,
+} from '../constants';
 import Utils from '../../common/utils/Utils';
 import { getRunInfo, getRunTags } from '../../experiment-tracking/reducers/Reducers';
 import RequestStateWrapper, { triggerError } from '../../common/components/RequestStateWrapper';
 import { ErrorView } from '../../common/components/ErrorView';
 import { Spinner } from '../../common/components/Spinner';
-import { getModelPageRoute, modelListPageRoute } from '../routes';
+import { ModelRegistryRoutes } from '../routes';
 import { getProtoField } from '../utils';
 import { getUUID } from '../../common/utils/ActionUtils';
 import _ from 'lodash';
 import { PageContainer } from '../../common/components/PageContainer';
 import { withRouterNext } from '../../common/utils/withRouterNext';
 import type { WithRouterNextProps } from '../../common/utils/withRouterNext';
+import { withErrorBoundary } from '../../common/utils/withErrorBoundary';
+import ErrorUtils from '../../common/utils/ErrorUtils';
+import type { ModelEntity, RunInfoEntity } from '../../experiment-tracking/types';
+import { ReduxState } from '../../redux-types';
+import { ErrorCodes } from '../../common/constants';
+import { injectIntl } from 'react-intl';
 
 type ModelVersionPageImplProps = WithRouterNextProps & {
   modelName: string;
@@ -38,7 +49,9 @@ type ModelVersionPageImplProps = WithRouterNextProps & {
   modelVersion?: any;
   runInfo?: any;
   runDisplayName?: string;
+  modelEntity?: ModelEntity;
   getModelVersionApi: (...args: any[]) => any;
+  getRegisteredModelApi: typeof getRegisteredModelApi;
   updateModelVersionApi: (...args: any[]) => any;
   transitionModelVersionStageApi: (...args: any[]) => any;
   deleteModelVersionApi: (...args: any[]) => any;
@@ -48,14 +61,12 @@ type ModelVersionPageImplProps = WithRouterNextProps & {
   parseMlModelFile: (...args: any[]) => any;
   schema?: any;
   activities?: Record<string, unknown>[];
+  intl?: any;
 };
 
 type ModelVersionPageImplState = any;
 
-export class ModelVersionPageImpl extends React.Component<
-  ModelVersionPageImplProps,
-  ModelVersionPageImplState
-> {
+export class ModelVersionPageImpl extends React.Component<ModelVersionPageImplProps, ModelVersionPageImplState> {
   listTransitionRequestId: any;
   pollIntervalId: any;
 
@@ -66,10 +77,7 @@ export class ModelVersionPageImpl extends React.Component<
   getModelVersionDetailsRequestId = getUUID();
   initGetMlModelFileRequestId = getUUID();
   state = {
-    criticalInitialRequestIds: [
-      this.initGetModelVersionDetailsRequestId,
-      this.initGetMlModelFileRequestId,
-    ],
+    criticalInitialRequestIds: [this.initGetModelVersionDetailsRequestId, this.initGetMlModelFileRequestId],
   };
 
   pollingRelatedRequestIds = [this.getModelVersionDetailsRequestId, this.getRunRequestId];
@@ -82,7 +90,7 @@ export class ModelVersionPageImpl extends React.Component<
 
   loadData = (isInitialLoading: any) => {
     const promises = [this.getModelVersionDetailAndRunInfo(isInitialLoading)];
-    return Promise.all([promises]);
+    return Promise.all(promises);
   };
 
   pollData = () => {
@@ -93,8 +101,9 @@ export class ModelVersionPageImpl extends React.Component<
         if (e.getErrorCode() === 'RESOURCE_DOES_NOT_EXIST') {
           Utils.logErrorAndNotifyUser(e);
           this.props.deleteModelVersionApi(modelName, version, undefined, true);
-          navigate(getModelPageRoute(modelName));
+          navigate(ModelRegistryRoutes.getModelPageRoute(modelName));
         } else {
+          // eslint-disable-next-line no-console -- TODO(FEINF-3587)
           console.error(e);
         }
       });
@@ -111,9 +120,7 @@ export class ModelVersionPageImpl extends React.Component<
       .getModelVersionApi(
         modelName,
         version,
-        isInitialLoading === true
-          ? this.initGetModelVersionDetailsRequestId
-          : this.getModelVersionDetailsRequestId,
+        isInitialLoading === true ? this.initGetModelVersionDetailsRequestId : this.getModelVersionDetailsRequestId,
       )
       .then(({ value }: any) => {
         if (value && !value[getProtoField('model_version')].run_link) {
@@ -128,27 +135,23 @@ export class ModelVersionPageImpl extends React.Component<
     this.props
       .getModelVersionArtifactApi(modelName, version)
       .then((content: any) =>
-        this.props.parseMlModelFile(
-          modelName,
-          version,
-          content.value,
-          this.initGetMlModelFileRequestId,
-        ),
+        this.props.parseMlModelFile(modelName, version, content.value, this.initGetMlModelFileRequestId),
       )
       .catch(() => {
         // Failure of this call chain should not block the page. Here we remove
         // `initGetMlModelFileRequestId` from `criticalInitialRequestIds`
         // to unblock RequestStateWrapper from rendering its content
         this.setState((prevState: any) => ({
-          criticalInitialRequestIds: _.without(
-            prevState.criticalInitialRequestIds,
-            this.initGetMlModelFileRequestId,
-          ),
+          criticalInitialRequestIds: _.without(prevState.criticalInitialRequestIds, this.initGetMlModelFileRequestId),
         }));
       });
   }
 
-  handleStageTransitionDropdownSelect = (activity: any, archiveExistingVersions: any) => {
+  // prettier-ignore
+  handleStageTransitionDropdownSelect = (
+    activity: PendingModelVersionActivity,
+    archiveExistingVersions?: boolean,
+  ) => {
     const { modelName, version } = this.props;
     const toStage = activity.to_stage;
     if (activity.type === ActivityTypes.APPLIED_TRANSITION) {
@@ -167,21 +170,31 @@ export class ModelVersionPageImpl extends React.Component<
 
   handleEditDescription = (description: any) => {
     const { modelName, version } = this.props;
-    return this.props
-      .updateModelVersionApi(modelName, version, description, this.updateModelVersionRequestId)
-      .then(this.loadData)
-      .catch(console.error);
+    return (
+      this.props
+        .updateModelVersionApi(modelName, version, description, this.updateModelVersionRequestId)
+        .then(this.loadData)
+        // eslint-disable-next-line no-console -- TODO(FEINF-3587)
+        .catch(console.error)
+    );
   };
 
   componentDidMount() {
+    // eslint-disable-next-line no-console -- TODO(FEINF-3587)
     this.loadData(true).catch(console.error);
+    this.loadModelDataWithAliases();
     this.pollIntervalId = setInterval(this.pollData, POLL_INTERVAL);
     this.getModelVersionMlModelFile();
   }
 
+  loadModelDataWithAliases = () => {
+    this.props.getRegisteredModelApi(this.props.modelName);
+  };
+
   // Make a new initial load if model version or name has changed
   componentDidUpdate(prevProps: ModelVersionPageImplProps) {
     if (this.props.version !== prevProps.version || this.props.modelName !== prevProps.modelName) {
+      // eslint-disable-next-line no-console -- TODO(FEINF-3587)
       this.loadData(true).catch(console.error);
       this.getModelVersionMlModelFile();
     }
@@ -192,8 +205,7 @@ export class ModelVersionPageImpl extends React.Component<
   }
 
   render() {
-    const { modelName, version, modelVersion, runInfo, runDisplayName, navigate, schema } =
-      this.props;
+    const { modelName, version, modelVersion, runInfo, runDisplayName, navigate, schema, modelEntity } = this.props;
 
     return (
       <PageContainer>
@@ -213,7 +225,7 @@ export class ModelVersionPageImpl extends React.Component<
                   <ErrorView
                     statusCode={409}
                     subMessage={resourceConflictError.error.getMessageField()}
-                    fallbackHomePageReactRoute={modelListPageRoute}
+                    fallbackHomePageReactRoute={ModelRegistryRoutes.modelListPageRoute}
                   />
                 );
               }
@@ -222,11 +234,36 @@ export class ModelVersionPageImpl extends React.Component<
                   <ErrorView
                     statusCode={404}
                     subMessage={`Model ${modelName} v${version} does not exist`}
-                    fallbackHomePageReactRoute={modelListPageRoute}
+                    fallbackHomePageReactRoute={ModelRegistryRoutes.modelListPageRoute}
                   />
                 );
               }
               // TODO(Zangr) Have a more generic boundary to handle all errors, not just 404.
+              const permissionDeniedErrors = requests.filter((request: any) => {
+                return (
+                  this.state.criticalInitialRequestIds.includes(request.id) &&
+                  request.error?.getErrorCode() === ErrorCodes.PERMISSION_DENIED
+                );
+              });
+              if (permissionDeniedErrors && permissionDeniedErrors[0]) {
+                return (
+                  <ErrorView
+                    statusCode={403}
+                    subMessage={this.props.intl.formatMessage(
+                      {
+                        defaultMessage: 'Permission denied for {modelName} version {version}. Error: "{errorMsg}"',
+                        description: 'Permission denied error message on model version detail page',
+                      },
+                      {
+                        modelName: modelName,
+                        version: version,
+                        errorMsg: permissionDeniedErrors[0].error?.getMessageField(),
+                      },
+                    )}
+                    fallbackHomePageReactRoute={ModelRegistryRoutes.modelListPageRoute}
+                  />
+                );
+              }
               triggerError(requests);
             } else if (loading) {
               return <Spinner />;
@@ -236,6 +273,7 @@ export class ModelVersionPageImpl extends React.Component<
                 <ModelVersionView
                   modelName={modelName}
                   modelVersion={modelVersion}
+                  modelEntity={modelEntity}
                   runInfo={runInfo}
                   runDisplayName={runDisplayName}
                   handleEditDescription={this.handleEditDescription}
@@ -243,6 +281,7 @@ export class ModelVersionPageImpl extends React.Component<
                   navigate={navigate}
                   handleStageTransitionDropdownSelect={this.handleStageTransitionDropdownSelect}
                   schema={schema}
+                  onAliasesModified={this.loadModelDataWithAliases}
                 />
               );
             }
@@ -254,20 +293,18 @@ export class ModelVersionPageImpl extends React.Component<
   }
 }
 
-const mapStateToProps = (
-  state: any,
-  ownProps: WithRouterNextProps<{ modelName: string; version: string }>,
-) => {
+const mapStateToProps = (state: ReduxState, ownProps: WithRouterNextProps<{ modelName: string; version: string }>) => {
   const modelName = decodeURIComponent(ownProps.params.modelName);
   const { version } = ownProps.params;
   const modelVersion = getModelVersion(state, modelName, version);
   const schema = getModelVersionSchemas(state, modelName, version);
-  let runInfo = null;
+  let runInfo: RunInfoEntity | null = null;
   if (modelVersion && !modelVersion.run_link) {
     runInfo = getRunInfo(modelVersion && modelVersion.run_id, state);
   }
-  const tags = runInfo && getRunTags(runInfo.getRunUuid(), state);
-  const runDisplayName = tags && Utils.getRunDisplayName(runInfo, runInfo.getRunUuid());
+  const tags = runInfo && getRunTags(runInfo.runUuid, state);
+  const runDisplayName = tags && runInfo && Utils.getRunDisplayName(runInfo, runInfo.runUuid);
+  const modelEntity = state.entities.modelByName[modelName];
   const { apis } = state;
   return {
     modelName,
@@ -277,11 +314,13 @@ const mapStateToProps = (
     runInfo,
     runDisplayName,
     apis,
+    modelEntity,
   };
 };
 
 const mapDispatchToProps = {
   getModelVersionApi,
+  getRegisteredModelApi,
   updateModelVersionApi,
   transitionModelVersionStageApi,
   getModelVersionArtifactApi,
@@ -290,6 +329,11 @@ const mapDispatchToProps = {
   getRunApi,
 };
 
-export const ModelVersionPage = withRouterNext(
-  connect(mapStateToProps, mapDispatchToProps)(ModelVersionPageImpl),
+const ModelVersionPageWithRouter = withRouterNext(
+  // @ts-expect-error TS(2769): No overload matches this call.
+  connect(mapStateToProps, mapDispatchToProps)(injectIntl(ModelVersionPageImpl)),
 );
+
+export const ModelVersionPage = withErrorBoundary(ErrorUtils.mlflowServices.MODEL_REGISTRY, ModelVersionPageWithRouter);
+
+export default ModelVersionPage;

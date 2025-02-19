@@ -1,9 +1,11 @@
 import argparse
-import mlflow
+
+import pytorch_lightning as pl
 from ax.service.ax_client import AxClient
 from iris import IrisClassification
 from iris_data_module import IrisDataModule
-import pytorch_lightning as pl
+
+import mlflow
 
 
 def train_evaluate(params, max_epochs):
@@ -14,19 +16,20 @@ def train_evaluate(params, max_epochs):
     mlflow.pytorch.autolog()
     trainer.fit(model, dm)
     trainer.test(datamodule=dm)
-    test_accuracy = trainer.callback_metrics.get("test_acc")
-    return test_accuracy
+    return trainer.callback_metrics.get("test_acc")
 
 
 def model_training_hyperparameter_tuning(max_epochs, total_trials, params):
     """
-     This function takes input params max_epochs, total_trials, params
-     and creates a nested run in Mlflow. The parameters, metrics, model and summary are dumped into their
-     respective mlflow-run ids. The best parameters are dumped along with the baseline model.
+    This function takes input params max_epochs, total_trials, params and creates a nested run in MLflow.
+    The parameters, metrics, model and summary are dumped into their respective mlflow-run ids. The best
+    parameters are dumped along with the baseline model.
 
-    :param max_epochs: Max epochs used for training the model. Type:int
-    :param total_trials: Number of ax-client experimental trials. Type:int
-    :param params: Model parameters. Type:dict
+    Args:
+        max_epochs: Max epochs used for training the model.
+        total_trials: Number of ax-client experimental trials.
+        params: Model parameters.
+
     """
     with mlflow.start_run(run_name="Parent Run"):
         train_evaluate(params=params, max_epochs=max_epochs)
@@ -42,7 +45,7 @@ def model_training_hyperparameter_tuning(max_epochs, total_trials, params):
         )
 
         for i in range(total_trials):
-            with mlflow.start_run(nested=True, run_name="Trial " + str(i)) as child_run:
+            with mlflow.start_run(nested=True, run_name="Trial " + str(i)):
                 parameters, trial_index = ax_client.get_next_trial()
                 test_accuracy = train_evaluate(params=parameters, max_epochs=max_epochs)
 

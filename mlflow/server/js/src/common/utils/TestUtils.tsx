@@ -1,16 +1,15 @@
-/**
- * NOTE: this code file was automatically migrated to TypeScript using ts-migrate and
- * may contain multiple `any` type annotations and `@ts-expect-error` directives.
- * If possible, please improve types while making changes to this file. If the type
- * annotations are already looking good, please remove this comment.
- */
+import type { DeepPartial } from 'redux';
 
-import React from 'react';
-import { IntlProvider } from 'react-intl';
-import { shallow, mount } from 'enzyme';
+import configureStore from 'redux-mock-store';
+import thunk from 'redux-thunk';
+import promiseMiddleware from 'redux-promise-middleware';
+
+import React, { useRef } from 'react';
 import { DEFAULT_LOCALE } from '../../i18n/loadMessages';
+import { ReduxState } from '../../redux-types';
+import { Provider } from 'react-redux';
 
-export const NOOP = () => {};
+export const NOOP = (...args: any[]) => {};
 
 export function deepFreeze(o: any) {
   Object.freeze(o);
@@ -27,30 +26,34 @@ export function deepFreeze(o: any) {
   return o;
 }
 
-const defaultProvderProps = {
+export const defaultProviderProps = {
   locale: DEFAULT_LOCALE,
   defaultLocale: DEFAULT_LOCALE,
   messages: {},
 };
 
-export function mountWithIntl(node: any, providerProps = {}) {
-  return mount(node, {
-    wrappingComponent: IntlProvider,
-    wrappingComponentProps: {
-      ...defaultProvderProps,
-      ...providerProps,
-    },
-  });
-}
+/**
+ * A simple seedable PRNG, used e.g. to replace Math.random() for deterministic testing.
+ * Taken from https://gist.github.com/blixt/f17b47c62508be59987b
+ */
+export const createPrng = (seed = 1000) => {
+  let _seed = seed % 2147483647;
+  if (_seed <= 0) _seed += 2147483646;
 
-export function shallowWithIntl(node: any, providerProps = {}) {
-  const mergedProviderProps = {
-    ...defaultProvderProps,
-    ...providerProps,
+  const next = () => {
+    return (_seed = (_seed * 16807) % 2147483647);
   };
-  return shallow(<IntlProvider {...mergedProviderProps}>{node}</IntlProvider>).dive();
-}
 
-export function shallowWithInjectIntl(node: any, providerProps = {}) {
-  return shallowWithIntl(node, providerProps).dive().dive().dive();
-}
+  return () => (next() - 1) / 2147483646;
+};
+
+export const MockedReduxStoreProvider = ({
+  state = {},
+  children,
+}: {
+  state?: DeepPartial<ReduxState>;
+  children: React.ReactNode;
+}) => {
+  const store = useRef(configureStore([thunk, promiseMiddleware()])(state));
+  return <Provider store={store.current}>{children}</Provider>;
+};

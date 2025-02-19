@@ -1,9 +1,12 @@
 import type { CSSProperties } from 'react';
 import React from 'react';
-import type { HTMLDataAttributes } from '../types';
-export interface TableHeaderProps extends HTMLDataAttributes {
-    /** Enables single-line ellipsis truncation */
+import { DesignSystemEventProviderAnalyticsEventTypes } from '../DesignSystemEventProvider';
+import type { AnalyticsEventProps, HTMLDataAttributes } from '../types';
+export interface TableHeaderProps extends HTMLDataAttributes, React.HTMLAttributes<HTMLDivElement>, AnalyticsEventProps<DesignSystemEventProviderAnalyticsEventTypes.OnValueChange> {
+    /** @deprecated Use `multiline` prop instead. This prop will be removed soon. */
     ellipsis?: boolean;
+    /** Enables multiline wrapping */
+    multiline?: boolean;
     /** Is this column sortable? */
     sortable?: boolean;
     /** The current sort direction for this column */
@@ -27,6 +30,11 @@ export interface TableHeaderProps extends HTMLDataAttributes {
     /** If the content of this header should be wrapped with Typography. Should only be set to false if
      * content is not a text (e.g. images) or you really need to render custom content. */
     wrapContent?: boolean;
+    hasAdjustableWidthHeader?: boolean;
+    /**  Handler to increase the width of the column, **/
+    increaseWidthHandler?: () => void;
+    /**  Handler to decrease the width of the column, **/
+    decreaseWidthHandler?: () => void;
 }
 export declare const TableHeader: React.ForwardRefExoticComponent<TableHeaderProps & React.RefAttributes<HTMLDivElement>>;
 //# sourceMappingURL=TableHeader.d.ts.map

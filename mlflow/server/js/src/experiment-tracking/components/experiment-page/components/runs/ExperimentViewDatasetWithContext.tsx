@@ -6,11 +6,13 @@ import { MLFLOW_RUN_DATASET_CONTEXT_TAG } from '../../../../constants';
 export interface DatasetWithContextProps {
   datasetWithTags: RunDatasetWithTags;
   displayTextAsLink: boolean;
+  className?: string;
 }
 
 export const ExperimentViewDatasetWithContext = ({
   datasetWithTags,
   displayTextAsLink,
+  className,
 }: DatasetWithContextProps) => {
   const { dataset, tags } = datasetWithTags;
   const { theme } = useDesignSystemTheme();
@@ -24,6 +26,7 @@ export const ExperimentViewDatasetWithContext = ({
         marginTop: theme.spacing.xs,
         marginBottom: theme.spacing.xs,
       }}
+      className={className}
     >
       <TableIcon css={{ marginRight: theme.spacing.xs, color: theme.colors.textSecondary }} />
       {displayTextAsLink ? (
@@ -31,11 +34,12 @@ export const ExperimentViewDatasetWithContext = ({
           {dataset.name} ({dataset.digest})
         </div>
       ) : (
-        <Typography.Text size='md' css={{ marginBottom: 0 }}>
+        <Typography.Text size="md" css={{ marginBottom: 0 }}>
           {dataset.name} ({dataset.digest})
         </Typography.Text>
       )}
       <Tag
+        componentId="codegen_mlflow_app_src_experiment-tracking_components_experiment-page_components_runs_experimentviewdatasetwithcontext.tsx_41"
         css={{
           textTransform: 'capitalize',
           marginLeft: theme.spacing.xs,
