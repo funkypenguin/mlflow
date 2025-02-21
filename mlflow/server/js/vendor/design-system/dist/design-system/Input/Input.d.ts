@@ -1,25 +1,24 @@
-import type { InputProps as AntDInputProps } from 'antd';
+import type { CSSObject, SerializedStyles } from '@emotion/react';
 import { Input as AntDInput } from 'antd';
-import type { GroupProps as AntDGroupProps, PasswordProps as AntDPasswordProps, TextAreaProps as AntDTextAreaProps } from 'antd/lib/input';
-import type { TextAreaRef } from 'antd/lib/input/TextArea';
 import React from 'react';
-import type { DangerousGeneralProps, DangerouslySetAntdProps, FormElementValidationState, HTMLDataAttributes } from '../types';
-export type InputRef = AntDInput;
-export interface InputProps extends Omit<AntDInputProps, 'prefixCls' | 'size' | 'addonAfter' | 'bordered'>, FormElementValidationState, HTMLDataAttributes, DangerouslySetAntdProps<AntDInputProps>, DangerousGeneralProps {
-    onClear?: () => void;
+import type { InputProps } from './common';
+import type { Theme } from '../../theme';
+import type { ValidationState } from '../types';
+interface InputStylesOptions {
+    useFocusWithin?: boolean;
 }
-export interface TextAreaProps extends Omit<AntDTextAreaProps, 'bordered' | 'showCount' | 'size'>, FormElementValidationState, HTMLDataAttributes, DangerouslySetAntdProps<AntDTextAreaProps>, DangerousGeneralProps {
-}
-export interface PasswordProps extends Omit<AntDPasswordProps, 'inputPrefixCls' | 'action' | 'visibilityToggle' | 'iconRender'>, FormElementValidationState, HTMLDataAttributes, DangerouslySetAntdProps<AntDPasswordProps>, DangerousGeneralProps {
-}
-export interface InputGroupProps extends Omit<AntDGroupProps, 'size'>, HTMLDataAttributes, DangerouslySetAntdProps<AntDGroupProps>, DangerousGeneralProps {
-}
-export declare const Input: React.ForwardRefExoticComponent<InputProps & React.RefAttributes<AntDInput>> & {
-    TextArea: React.ForwardRefExoticComponent<TextAreaProps & React.RefAttributes<TextAreaRef>>;
-    Password: React.FC<PasswordProps>;
-    Group: ({ dangerouslySetAntdProps, dangerouslyAppendEmotionCSS, compact, ...props }: InputGroupProps) => import("@emotion/react/jsx-runtime").JSX.Element;
-};
-export declare const __INTERNAL_DO_NOT_USE__TextArea: React.ForwardRefExoticComponent<TextAreaProps & React.RefAttributes<TextAreaRef>>;
-export declare const __INTERNAL_DO_NOT_USE__Password: React.FC<PasswordProps>;
-export declare const __INTERNAL_DO_NOT_USE_DEDUPE__Group: ({ dangerouslySetAntdProps, dangerouslyAppendEmotionCSS, compact, ...props }: InputGroupProps) => import("@emotion/react/jsx-runtime").JSX.Element;
+export declare const getInputStyles: (clsPrefix: string, theme: Theme, { validationState, type, hasValue, useNewShadows, }: {
+    validationState?: ValidationState;
+    type?: string;
+    hasValue?: boolean;
+    useNewShadows?: boolean;
+}, { useFocusWithin }: InputStylesOptions) => CSSObject;
+export declare const getInputEmotionStyles: (clsPrefix: string, theme: Theme, { validationState, type, hasValue, useNewShadows, }: {
+    validationState?: ValidationState;
+    type?: string;
+    hasValue?: boolean;
+    useNewShadows: boolean;
+}) => SerializedStyles;
+export declare const Input: React.ForwardRefExoticComponent<InputProps & React.RefAttributes<AntDInput>>;
+export {};
 //# sourceMappingURL=Input.d.ts.map

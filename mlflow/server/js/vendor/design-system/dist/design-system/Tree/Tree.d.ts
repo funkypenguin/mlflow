@@ -1,8 +1,7 @@
-/// <reference types="react" />
 import type { TreeProps as AntDTreeProps } from 'antd';
 import type { DangerouslySetAntdProps, HTMLDataAttributes } from '../types';
 export type { TreeDataNode } from 'antd';
-export type NodeSize = 'default' | 'small';
+export type NodeSize = 'default' | 'small' | 'x-small' | 'xx-small';
 export interface TreeProps extends HTMLDataAttributes, DangerouslySetAntdProps<AntDTreeProps> {
     /**
      * An array of `TreeNode`s representing the data in the tree
@@ -33,7 +32,7 @@ export interface TreeProps extends HTMLDataAttributes, DangerouslySetAntdProps<A
      */
     mode?: 'default' | 'selectable' | 'multiselectable' | 'checkable';
     /**
-     * The size of the button. Default is 32px whereas small is 24px.
+     * The size of the button. Sizes below small continue to compact the tree horizontally but not vertically.
      */
     size?: NodeSize;
     /**
@@ -42,6 +41,30 @@ export interface TreeProps extends HTMLDataAttributes, DangerouslySetAntdProps<A
     showLine?: boolean | {
         showLeafIcon: boolean;
     };
+    /**
+     * (Controlled) Specifies the keys of the selected treeNodes, multiple selection needs to set multiple to true
+     */
+    selectedKeys?: AntDTreeProps['selectedKeys'];
+    /**
+     * (Controlled) Specifies the keys of the expanded treeNodes
+     */
+    expandedKeys?: AntDTreeProps['expandedKeys'];
+    /**
+     * Whether to automatically expand a parent treeNode
+     */
+    autoExpandParent?: AntDTreeProps['autoExpandParent'];
+    /**
+     * Callback function for when the user clicks a treeNode
+     */
+    onSelect?: AntDTreeProps['onSelect'];
+    /**
+     * Callback function for when a treeNode is expanded or collapsed
+     */
+    onExpand?: AntDTreeProps['onExpand'];
+    /**
+     * Callback function for when the onCheck event occurs
+     */
+    onCheck?: AntDTreeProps['onCheck'];
 }
 export declare const Tree: import("react").ForwardRefExoticComponent<TreeProps & import("react").RefAttributes<AntDTree>>;
 //# sourceMappingURL=Tree.d.ts.map

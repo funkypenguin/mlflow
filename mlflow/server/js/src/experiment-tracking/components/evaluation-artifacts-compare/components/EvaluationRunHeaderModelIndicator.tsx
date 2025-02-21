@@ -1,86 +1,100 @@
-import { ModelsIcon, Typography, useDesignSystemTheme } from '@databricks/design-system';
-import Utils from '../../../../common/utils/Utils';
-import type { RunRowType } from '../../experiment-page/utils/experimentPage.row-types';
-import { Link } from 'react-router-dom-v5-compat';
-import { getModelPageRoute, getModelVersionPageRoute } from '../../../../model-registry/routes';
-import Routes from '../../../routes';
+import { Button, Popover, Typography, useDesignSystemTheme } from '@databricks/design-system';
 import { FormattedMessage } from 'react-intl';
+import { useSelector } from 'react-redux';
+import { ReduxState } from '../../../../redux-types';
+import type { RunRowType } from '../../experiment-page/utils/experimentPage.row-types';
+import {
+  canEvaluateOnRun,
+  extractEvaluationPrerequisitesForRun,
+} from '../../prompt-engineering/PromptEngineering.utils';
+import { usePromptEngineeringContext } from '../contexts/PromptEngineeringContext';
 
 interface EvaluationRunHeaderModelIndicatorProps {
   run: RunRowType;
 }
+export const EvaluationRunHeaderModelIndicator = ({ run }: EvaluationRunHeaderModelIndicatorProps) => {
+  const { theme } = useDesignSystemTheme();
 
-const useLastModelData = (run: RunRowType) => {
-  const {
-    models: { loggedModels, registeredModels },
-    experimentId,
-    runUuid,
-  } = run;
+  const { isHeaderExpanded } = usePromptEngineeringContext();
 
-  // `mergeLoggedAndRegisteredModels` function returns invalid type so we're using `any` for the time being
-  const models: any[] = Utils.mergeLoggedAndRegisteredModels(loggedModels, registeredModels);
-  const [lastModel] = models || [];
+  const promptEvaluationDataForRun = extractEvaluationPrerequisitesForRun(run);
 
-  if (lastModel) {
-    if (lastModel.registeredModelName) {
-      const { registeredModelName, registeredModelVersion } = lastModel;
-      return {
-        displayName: `${registeredModelName}/${registeredModelVersion}`,
-        link: getModelVersionPageRoute(registeredModelName, registeredModelVersion),
-      };
-    }
+  const gatewayRoute = useSelector(({ modelGateway }: ReduxState) => {
+    const gatewayKey = `${promptEvaluationDataForRun.routeType}:${promptEvaluationDataForRun.routeName}`;
+    return promptEvaluationDataForRun.routeName ? modelGateway.modelGatewayRoutes[gatewayKey] : null;
+  });
 
-    if (lastModel.flavors) {
-      const loggedModelFlavorText = lastModel.flavors ? (
-        lastModel.flavors[0]
-      ) : (
-        <FormattedMessage
-          defaultMessage='Model'
-          description='Experiment page > artifact compare view > run header > model indicator > default name for unnamed models'
-        />
-      );
-
-      return {
-        displayName: loggedModelFlavorText,
-        link: `${Routes.getRunPageRoute(experimentId, runUuid)}/artifactPath/${
-          lastModel.artifactPath
-        }`,
-      };
-    }
+  if (!canEvaluateOnRun(run) || !promptEvaluationDataForRun) {
+    return null;
   }
 
-  return null;
-};
-
-export const EvaluationRunHeaderModelIndicator = ({
-  run,
-}: EvaluationRunHeaderModelIndicatorProps) => {
-  const { theme } = useDesignSystemTheme();
-  const modelData = useLastModelData(run);
+  const { parameters, promptTemplate, routeName } = promptEvaluationDataForRun;
+  const { stop: stopSequences = [] } = parameters;
 
   return (
-    <div css={{ flex: '1 0', padding: '0 8px', display: 'flex', alignItems: 'center' }}>
-      <ModelsIcon css={{ marginRight: theme.spacing.xs, color: theme.colors.textSecondary }} />
-      {modelData ? (
-        <Link
-          target='_blank'
-          to={modelData.link}
-          css={{
-            overflow: 'hidden',
-            whiteSpace: 'nowrap',
-            textOverflow: 'ellipsis',
-            fontSize: theme.typography.fontSizeMd,
-          }}
-        >
-          {modelData.displayName}
-        </Link>
-      ) : (
-        <Typography.Text size='md' color='info'>
-          <FormattedMessage
-            defaultMessage='No models'
-            description='Experiment page > artifact compare view > run header > model indicator > empty'
-          />
-        </Typography.Text>
+    <div
+      css={{
+        marginTop: theme.spacing.xs,
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: theme.spacing.sm,
+        overflowX: 'hidden',
+        width: '100%',
+      }}
+    >
+      {gatewayRoute && 'mlflowDeployment' in gatewayRoute && gatewayRoute.mlflowDeployment && (
+        <Typography.Hint>{gatewayRoute.mlflowDeployment.name}</Typography.Hint>
+      )}
+      {isHeaderExpanded && (
+        <>
+          <Typography.Hint>
+            <FormattedMessage
+              defaultMessage="Temperature: {temperature}"
+              description="Experiment page > artifact compare view > run column header prompt metadata > temperature parameter"
+              values={parameters}
+            />
+          </Typography.Hint>
+          <Typography.Hint>
+            <FormattedMessage
+              defaultMessage="Max. tokens: {max_tokens}"
+              description="Experiment page > artifact compare view > run column header prompt metadata > max tokens parameter"
+              values={parameters}
+            />
+          </Typography.Hint>
+          {stopSequences.length ? (
+            <Typography.Hint css={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <FormattedMessage
+                defaultMessage="Stop sequences: {stopSequences}"
+                description="Experiment page > artifact compare view > run column header prompt metadata > stop sequences parameter"
+                values={{ stopSequences: stopSequences?.join(', ') }}
+              />
+            </Typography.Hint>
+          ) : null}
+          <div css={{ fontSize: 0 }}>
+            <Popover.Root componentId="codegen_mlflow_app_src_experiment-tracking_components_evaluation-artifacts-compare_components_evaluationrunheadermodelindicator.tsx_107">
+              <Popover.Trigger asChild>
+                <Button
+                  componentId="codegen_mlflow_app_src_experiment-tracking_components_evaluation-artifacts-compare_components_evaluationrunheadermodelindicator.tsx_115"
+                  type="link"
+                  size="small"
+                  css={{
+                    fontSize: theme.typography.fontSizeSm,
+                  }}
+                >
+                  <FormattedMessage
+                    defaultMessage="View prompt template"
+                    description='Experiment page > artifact compare view > run column header prompt metadata > "view prompt template" button label'
+                  />
+                </Button>
+              </Popover.Trigger>
+              <Popover.Content css={{ maxWidth: 300 }}>
+                <Popover.Arrow />
+                {promptTemplate}
+              </Popover.Content>
+            </Popover.Root>
+          </div>
+        </>
       )}
     </div>
   );

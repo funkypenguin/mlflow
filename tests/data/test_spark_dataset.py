@@ -1,25 +1,27 @@
 import json
 import os
-import pytest
+
 import pandas as pd
+import pytest
+
 import mlflow.data
 from mlflow.data.code_dataset_source import CodeDatasetSource
+from mlflow.data.delta_dataset_source import DeltaDatasetSource
+from mlflow.data.evaluation_dataset import EvaluationDataset
 from mlflow.data.spark_dataset import SparkDataset
 from mlflow.data.spark_dataset_source import SparkDatasetSource
-from mlflow.data.delta_dataset_source import DeltaDatasetSource
 from mlflow.exceptions import MlflowException
-from mlflow.models.evaluation.base import EvaluationDataset
 from mlflow.types.schema import Schema
 from mlflow.types.utils import _infer_schema
 
 
-@pytest.fixture()
+@pytest.fixture
 def spark_session(tmp_path):
     from pyspark.sql import SparkSession
 
     with (
         SparkSession.builder.master("local[*]")
-        .config("spark.jars.packages", "io.delta:delta-core_2.12:2.4.0")
+        .config("spark.jars.packages", "io.delta:delta-spark_2.12:3.0.0")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
         .config(
             "spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog"
@@ -164,6 +166,49 @@ def test_targets_property(spark_session, tmp_path, df):
     )
     assert dataset_with_targets.targets == "c"
 
+    with pytest.raises(
+        MlflowException,
+        match="The specified Spark dataset does not contain the specified targets column",
+    ):
+        SparkDataset(
+            df=df_spark,
+            source=source,
+            targets="nonexistent",
+            name="testname",
+        )
+
+
+def test_predictions_property(spark_session, tmp_path, df):
+    df_spark = spark_session.createDataFrame(df)
+    path = str(tmp_path / "temp.parquet")
+    df_spark.write.parquet(path)
+
+    source = SparkDatasetSource(path=path)
+    dataset_no_predictions = SparkDataset(
+        df=df_spark,
+        source=source,
+        name="testname",
+    )
+    assert dataset_no_predictions.predictions is None
+    dataset_with_predictions = SparkDataset(
+        df=df_spark,
+        source=source,
+        predictions="b",
+        name="testname",
+    )
+    assert dataset_with_predictions.predictions == "b"
+
+    with pytest.raises(
+        MlflowException,
+        match="The specified Spark dataset does not contain the specified predictions column",
+    ):
+        SparkDataset(
+            df=df_spark,
+            source=source,
+            predictions="nonexistent",
+            name="testname",
+        )
+
 
 def test_from_spark_no_source_specified(spark_session, df):
     df_spark = spark_session.createDataFrame(df)
@@ -184,8 +229,7 @@ def test_from_spark_with_sql_and_version(spark_session, tmp_path, df):
         match="`version` may not be specified when `sql` is specified. `version` may only be"
         " specified when `table_name` or `path` is specified.",
     ):
-        # pylint: disable=unused-variable
-        mlflow_df = mlflow.data.from_spark(df_spark, sql="SELECT * FROM table", version=1)
+        mlflow.data.from_spark(df_spark, sql="SELECT * FROM table", version=1)
 
 
 def test_from_spark_path(spark_session, tmp_path, df):
@@ -215,7 +259,7 @@ def test_from_spark_delta_path(spark_session, tmp_path, df):
     _check_spark_dataset(mlflow_df, df, df_spark, DeltaDatasetSource)
 
 
-def test_from_spark_sql(spark_session, tmp_path, df):
+def test_from_spark_sql(spark_session, df):
     df_spark = spark_session.createDataFrame(df)
     df_spark.createOrReplaceTempView("table")
 
@@ -224,7 +268,7 @@ def test_from_spark_sql(spark_session, tmp_path, df):
     _check_spark_dataset(mlflow_df, df, df_spark, SparkDatasetSource)
 
 
-def test_from_spark_table_name(spark_session, tmp_path, df):
+def test_from_spark_table_name(spark_session, df):
     df_spark = spark_session.createDataFrame(df)
     df_spark.createOrReplaceTempView("my_spark_table")
 
@@ -233,7 +277,7 @@ def test_from_spark_table_name(spark_session, tmp_path, df):
     _check_spark_dataset(mlflow_df, df, df_spark, SparkDatasetSource)
 
 
-def test_from_spark_table_name_with_version(spark_session, tmp_path, df):
+def test_from_spark_table_name_with_version(spark_session, df):
     df_spark = spark_session.createDataFrame(df)
     df_spark.createOrReplaceTempView("my_spark_table")
 
@@ -242,11 +286,10 @@ def test_from_spark_table_name_with_version(spark_session, tmp_path, df):
         match="Version '1' was specified, but could not find a Delta table "
         "with name 'my_spark_table'",
     ):
-        # pylint: disable=unused-variable
-        mlflow_df = mlflow.data.from_spark(df_spark, table_name="my_spark_table", version=1)
+        mlflow.data.from_spark(df_spark, table_name="my_spark_table", version=1)
 
 
-def test_from_spark_delta_table_name(spark_session, tmp_path, df):
+def test_from_spark_delta_table_name(spark_session, df):
     df_spark = spark_session.createDataFrame(df)
     # write to delta table
     df_spark.write.format("delta").mode("overwrite").saveAsTable("my_delta_table")
@@ -256,7 +299,7 @@ def test_from_spark_delta_table_name(spark_session, tmp_path, df):
     _check_spark_dataset(mlflow_df, df, df_spark, DeltaDatasetSource)
 
 
-def test_from_spark_delta_table_name_and_version(spark_session, tmp_path, df):
+def test_from_spark_delta_table_name_and_version(spark_session, df):
     df_spark = spark_session.createDataFrame(df)
     # write to delta table
     df_spark.write.format("delta").mode("overwrite").saveAsTable("my_delta_table")
@@ -266,22 +309,20 @@ def test_from_spark_delta_table_name_and_version(spark_session, tmp_path, df):
     _check_spark_dataset(mlflow_df, df, df_spark, DeltaDatasetSource)
 
 
-def test_load_delta_with_no_source_info(spark_session, tmp_path):
+def test_load_delta_with_no_source_info():
     with pytest.raises(
         MlflowException,
         match="Must specify exactly one of `table_name` or `path`.",
     ):
-        # pylint: disable=unused-variable
-        mlflow_df = mlflow.data.load_delta()
+        mlflow.data.load_delta()
 
 
-def test_load_delta_with_both_table_name_and_path(spark_session, tmp_path):
+def test_load_delta_with_both_table_name_and_path():
     with pytest.raises(
         MlflowException,
         match="Must specify exactly one of `table_name` or `path`.",
     ):
-        # pylint: disable=unused-variable
-        mlflow_df = mlflow.data.load_delta(table_name="my_table", path="my_path")
+        mlflow.data.load_delta(table_name="my_table", path="my_path")
 
 
 def test_load_delta_path(spark_session, tmp_path, df):
@@ -351,8 +392,10 @@ def test_to_evaluation_dataset(spark_session, tmp_path, df):
         source=source,
         targets="c",
         name="testname",
+        predictions="b",
     )
     evaluation_dataset = dataset.to_evaluation_dataset()
     assert isinstance(evaluation_dataset, EvaluationDataset)
-    assert evaluation_dataset.features_data.equals(df_spark.toPandas().drop(columns=["c"]))
+    assert evaluation_dataset.features_data.equals(df_spark.toPandas()[["a"]])
     assert np.array_equal(evaluation_dataset.labels_data, df_spark.toPandas()["c"].values)
+    assert np.array_equal(evaluation_dataset.predictions_data, df_spark.toPandas()["b"].values)

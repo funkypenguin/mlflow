@@ -1,7 +1,7 @@
-from transformers import BertModel, BertTokenizerFast, pipeline
-import mlflow
 import torch
+from transformers import BertModel, BertTokenizerFast, pipeline
 
+import mlflow
 
 sentence_transformers_architecture = "sentence-transformers/all-MiniLM-L12-v2"
 task = "feature-extraction"

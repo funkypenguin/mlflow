@@ -1,7 +1,8 @@
+from typing import Any
+
 from mlflow.exceptions import MlflowException
-from mlflow.types.schema import Schema
 from mlflow.protos.databricks_pb2 import INVALID_PARAMETER_VALUE
-from typing import Dict, Any
+from mlflow.types.schema import Schema
 
 
 class TensorDatasetSchema:
@@ -12,23 +13,23 @@ class TensorDatasetSchema:
     def __init__(self, features: Schema, targets: Schema = None):
         if not isinstance(features, Schema):
             raise MlflowException(
-                "features must be mlflow.types.Schema, got '{}'".format(type(features)),
+                f"features must be mlflow.types.Schema, got '{type(features)}'",
                 INVALID_PARAMETER_VALUE,
             )
         if targets is not None and not isinstance(targets, Schema):
             raise MlflowException(
-                "targets must be either None or mlflow.types.Schema, "
-                "got '{}'".format(type(features)),
+                f"targets must be either None or mlflow.types.Schema, got '{type(features)}'",
                 INVALID_PARAMETER_VALUE,
             )
         self.features = features
         self.targets = targets
 
-    def to_dict(self) -> Dict[str, Any]:
-        """
-        Serialize into a 'jsonable' dictionary.
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize into a 'jsonable' dictionary.
 
-        :return: dictionary representation of the schema's features and targets (if defined).
+        Returns:
+            dictionary representation of the schema's features and targets (if defined).
+
         """
 
         return {
@@ -39,15 +40,16 @@ class TensorDatasetSchema:
         }
 
     @classmethod
-    def from_dict(cls, schema_dict: Dict[str, Any]):
-        """
-        Deserialize from dictionary representation.
+    def from_dict(cls, schema_dict: dict[str, Any]):
+        """Deserialize from dictionary representation.
 
-        :param schema_dict: Dictionary representation of model signature.
-                            Expected dictionary format:
-                            `{'features': <json string>, 'targets': <json string>" }`
+        Args:
+            schema_dict: Dictionary representation of model signature. Expected dictionary format:
+                `{'features': <json string>, 'targets': <json string>" }`
 
-        :return: TensorDatasetSchema populated with the data from the dictionary.
+        Returns:
+            TensorDatasetSchema populated with the data from the dictionary.
+
         """
         if "mlflow_tensorspec" not in schema_dict:
             raise MlflowException(
@@ -71,9 +73,4 @@ class TensorDatasetSchema:
         )
 
     def __repr__(self) -> str:
-        return (
-            "features: \n"
-            "  {}\n"
-            "targets: \n"
-            "  {}\n".format(repr(self.features), repr(self.targets))
-        )
+        return f"features:\n  {self.features!r}\ntargets:\n  {self.targets!r}\n"

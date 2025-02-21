@@ -1,10 +1,12 @@
-import pytest
 from unittest import mock
 
+import pytest
+
 import mlflow
-from mlflow.exceptions import MlflowException
 import mlflow.spark
-from mlflow._spark_autologging import _get_current_listener, PythonSubscriber
+from mlflow.exceptions import MlflowException
+from mlflow.spark.autologging import PythonSubscriber, _get_current_listener
+
 from tests.spark.autologging.utils import _get_or_create_spark_session
 
 
@@ -14,10 +16,11 @@ def spark_session():
         yield session
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_get_current_listener():
-    with mock.patch("mlflow._spark_autologging._get_current_listener") as get_listener_patch:
-        get_listener_patch.return_value = None
+    with mock.patch(
+        "mlflow.spark.autologging._get_current_listener", return_value=None
+    ) as get_listener_patch:
         yield get_listener_patch
 
 
@@ -42,10 +45,7 @@ def test_subscriber_methods():
 def test_enabling_autologging_throws_for_wrong_spark_version(
     spark_session, mock_get_current_listener
 ):
-    # pylint: disable=unused-argument
-    with mock.patch("mlflow._spark_autologging._get_spark_major_version") as get_version_mock:
-        get_version_mock.return_value = 2
-
+    with mock.patch("mlflow.spark.autologging._get_spark_major_version", return_value=2):
         with pytest.raises(
             MlflowException, match="Spark autologging unsupported for Spark versions < 3"
         ):

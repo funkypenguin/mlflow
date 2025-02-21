@@ -52,8 +52,8 @@ export const getDefaultHeaders = (cookieStr: any) => {
 };
 
 export const getAjaxUrl = (relativeUrl: any) => {
-  // @ts-expect-error TS(4111): Property 'USE_ABSOLUTE_AJAX_URLS' comes from an in... Remove this comment to see the full error message
-  if (process.env.USE_ABSOLUTE_AJAX_URLS === 'true' && !relativeUrl.startsWith('/')) {
+  // @ts-expect-error TS(4111): Property 'MLFLOW_USE_ABSOLUTE_AJAX_URLS' comes from an in... Remove this comment to see the full error message
+  if (process.env.MLFLOW_USE_ABSOLUTE_AJAX_URLS === 'true' && !relativeUrl.startsWith('/')) {
     return '/' + relativeUrl;
   }
   return relativeUrl;
@@ -87,6 +87,7 @@ export const yamlResponseParser = ({ resolve, response }: any) =>
   parseResponse({ resolve, response, parser: yaml.safeLoad });
 
 export const defaultError = ({ reject, response, err }: any) => {
+  // eslint-disable-next-line no-console -- TODO(FEINF-3587)
   console.error('Fetch failed: ', response || err);
   if (response) {
     response.text().then((text: any) => reject(new ErrorWrapper(text, response.status)));
@@ -200,6 +201,9 @@ export const retry = async (
   }
 };
 
+// not a 200 and also not a retryable HTTP status code
+const defaultFetchErrorConditionFn = (res: any) => !res || (!res.ok && !HTTPRetryStatuses.includes(res.status));
+
 /**
  * Makes a fetch request.
  * @param relativeUrl: relative URL to the shard URL
@@ -228,6 +232,7 @@ export const fetchEndpoint = ({
   initialDelay = 1000,
   success = defaultResponseParser,
   error = defaultError,
+  errorCondition = defaultFetchErrorConditionFn,
 }: any) => {
   return new Promise((resolve, reject) =>
     retry(
@@ -248,9 +253,7 @@ export const fetchEndpoint = ({
         // @ts-expect-error TS(2322): Type '(res: any) => any' is not assignable to type... Remove this comment to see the full error message
         successCondition: (res: any) => res && res.ok,
         success: ({ res }) => success({ resolve, reject, response: res }),
-        // not a 200 and also not a retryable HTTP status code
-        // @ts-expect-error TS(2322): Type '(res: any) => boolean' is not assignable to ... Remove this comment to see the full error message
-        errorCondition: (res: any) => !res || (!res.ok && !HTTPRetryStatuses.includes(res.status)),
+        errorCondition,
         // @ts-expect-error TS(2322): Type '({ res, err }: any) => any' is not assignabl... Remove this comment to see the full error message
         error: ({ res, err }) => error({ resolve, reject, response: res, err: err }),
       },
@@ -277,8 +280,7 @@ const generateJsonBody = (data: any) => {
     throw new Error(
       // Reported during ESLint upgrade
       // eslint-disable-next-line max-len
-      'Unexpected type of input. The REST api payload type must be either an object or a string, got ' +
-        typeof data,
+      'Unexpected type of input. The REST api payload type must be either an object or a string, got ' + typeof data,
     );
   }
 };

@@ -41,6 +41,12 @@ const modelByName = (state = {}, action: any) => {
     }
     case fulfilled(GET_REGISTERED_MODEL): {
       const detailedModel = action.payload[getProtoField('registered_model')];
+
+      // If model retrieved from API contains no assigned aliases,
+      // the corresponding field will be excluded from the payload.
+      // We set it explicitly to make sure it works properly with the equality check below.
+      detailedModel.aliases ||= [];
+
       const { modelName } = action.meta;
       const modelWithUpdatedMetadata = {
         // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
@@ -164,16 +170,16 @@ export const getModelVersionSchemas = (state: any, modelName: any, version: any)
           // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
           schemaMap['inputs'] = JSON.parse(artifact.signature.inputs.replace(/(\r\n|\n|\r)/gm, ''));
         } catch (error) {
+          // eslint-disable-next-line no-console -- TODO(FEINF-3587)
           console.error(error);
         }
       }
       if (artifact.signature.outputs) {
         try {
           // @ts-expect-error TS(7053): Element implicitly has an 'any' type because expre... Remove this comment to see the full error message
-          schemaMap['outputs'] = JSON.parse(
-            artifact.signature.outputs.replace(/(\r\n|\n|\r)/gm, ''),
-          );
+          schemaMap['outputs'] = JSON.parse(artifact.signature.outputs.replace(/(\r\n|\n|\r)/gm, ''));
         } catch (error) {
+          // eslint-disable-next-line no-console -- TODO(FEINF-3587)
           console.error(error);
         }
       }
@@ -233,7 +239,7 @@ const tagsByRegisteredModel = (state = {}, action: any) => {
         ...newState,
         [modelName]: {
           ...oldTags,
-          [tag.getKey()]: tag,
+          [tag.key]: tag,
         },
       };
       return newState;
@@ -296,7 +302,7 @@ const tagsByModelVersion = (state = {}, action: any) => {
         [modelName]: {
           [version]: {
             ...oldTags,
-            [tag.getKey()]: tag,
+            [tag.key]: tag,
           },
         },
       };

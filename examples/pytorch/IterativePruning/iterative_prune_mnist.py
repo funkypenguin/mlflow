@@ -8,14 +8,11 @@ from pathlib import Path
 import lightning as L
 import torch
 from ax.service.ax_client import AxClient
+from mnist import LightningMNISTClassifier, MNISTDataModule
 from prettytable import PrettyTable
 from torch.nn.utils import prune
 
 import mlflow.pytorch
-from mnist import (
-    MNISTDataModule,
-    LightningMNISTClassifier,
-)
 from mlflow.tracking.artifact_utils import _download_artifact_from_uri
 
 
@@ -45,7 +42,9 @@ class IterativePrune:
     def load_base_model(self):
         path = Path(_download_artifact_from_uri(self.base_model_path))
         model_file_path = os.path.join(path, "data/model.pth")
-        return torch.load(model_file_path)
+        # Since torch 2.6, the default value of weights_only became True.
+        # To prevent UnpicklingError from happening, need to explicitly set weights_only=False.
+        return torch.load(model_file_path, weights_only=False)
 
     def initialize_ax_client(self):
         self.ax_client = AxClient()
@@ -59,7 +58,7 @@ class IterativePrune:
     @staticmethod
     def prune_and_save_model(model, amount):
         for _, module in model.named_modules():
-            if isinstance(module, torch.nn.Conv2d) or isinstance(module, torch.nn.Linear):
+            if isinstance(module, (torch.nn.Conv2d, torch.nn.Linear)):
                 prune.l1_unstructured(module, name="weight", amount=amount)
                 prune.remove(module, "weight")
 
@@ -107,8 +106,7 @@ class IterativePrune:
         self.write_prune_summary(summary, params)
         trainer = self.run_mnist_model()
         metrics = trainer.callback_metrics
-        test_accuracy = metrics.get("avg_test_acc")
-        return test_accuracy
+        return metrics.get("avg_test_acc")
 
     def initiate_pruning_process(self, model):
         total_trials = int(vars(self.parser_args)["total_trials"])
@@ -117,7 +115,7 @@ class IterativePrune:
         for i in range(total_trials):
             parameters, trial_index = self.ax_client.get_next_trial()
             print("***************************************************************************")
-            print("Running Trial {}".format(i + 1))
+            print(f"Running Trial {i + 1}")
             print("***************************************************************************")
             with mlflow.start_run(nested=True, run_name="Iteration" + str(i)):
                 mlflow.set_tags({"AX_TRIAL": i})
