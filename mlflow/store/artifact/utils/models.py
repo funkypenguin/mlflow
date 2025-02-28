@@ -1,5 +1,5 @@
-from typing import NamedTuple, Optional
 import urllib.parse
+from typing import NamedTuple, Optional
 
 import mlflow.tracking
 from mlflow.exceptions import MlflowException
@@ -15,12 +15,11 @@ def is_using_databricks_registry(uri):
 
 def _improper_model_uri_msg(uri):
     return (
-        "Not a proper models:/ URI: %s. " % uri
-        + "Models URIs must be of the form 'models:/<model_name>/<suffix>' "
-        + "or 'models:/<model_name>@<alias>' where suffix is a model version, stage, "
-        + "or the string '%s' and where alias is a registered model alias. "
-        % _MODELS_URI_SUFFIX_LATEST
-        + "Only one of suffix or alias can be defined at a time."
+        f"Not a proper models:/ URI: {uri}. "
+        + "Models URIs must be of the form 'models:/model_name/suffix' "
+        + "or 'models:/model_name@alias' where suffix is a model version, stage, "
+        + f"or the string {_MODELS_URI_SUFFIX_LATEST!r} and where alias is a registered model "
+        + "alias. Only one of suffix or alias can be defined at a time."
     )
 
 

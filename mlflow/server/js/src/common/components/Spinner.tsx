@@ -6,7 +6,6 @@
  */
 
 import React, { Component } from 'react';
-// @ts-expect-error TS(2307): Cannot find module '../static/mlflow-spinner.png' ... Remove this comment to see the full error message
 import spinner from '../static/mlflow-spinner.png';
 import { keyframes } from '@emotion/react';
 
@@ -19,7 +18,7 @@ export class Spinner extends Component<Props> {
     return (
       // @ts-expect-error TS(2322): Type '(theme: Theme) => { width: number; marginTop... Remove this comment to see the full error message
       <div css={(theme) => styles.spinner(theme, this.props.showImmediately)}>
-        <img alt='Page loading...' src={spinner} />
+        <img alt="Page loading..." src={spinner} />
       </div>
     );
   }

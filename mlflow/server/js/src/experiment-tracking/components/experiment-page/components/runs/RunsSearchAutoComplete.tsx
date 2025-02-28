@@ -1,21 +1,20 @@
 import { isEqual } from 'lodash';
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { FormattedMessage, useIntl } from 'react-intl';
 import {
   AutoComplete,
   Input,
   SearchIcon,
-  Tooltip,
+  LegacyTooltip,
   InfoIcon,
   Button,
   CloseIcon,
+  useDesignSystemTheme,
+  Tooltip,
+  InfoFillIcon,
 } from '@databricks/design-system';
 import { Theme } from '@emotion/react';
 import { ExperimentRunsSelectorResult } from '../../utils/experimentRuns.selector';
-import {
-  clearSearchExperimentsFacetsFilters,
-  SearchExperimentRunsFacetsState,
-} from '../../models/SearchExperimentRunsFacetsState';
-import { UpdateExperimentSearchFacetsFn } from '../../../../types';
 import { ErrorWrapper } from '../../../../../common/utils/ErrorWrapper';
 import { useExperimentViewLocalStore } from '../../hooks/useExperimentViewLocalStore';
 import { RunsSearchTooltipContent } from './RunsSearchTooltipContent';
@@ -28,6 +27,8 @@ import {
   getOptionsFromEntityNames,
   OptionGroup,
 } from './RunsSearchAutoComplete.utils';
+import { createQuickRegexpSearchFilter, detectSqlSyntaxInSearchQuery } from '../../utils/experimentPage.fetch-utils';
+import { shouldUseRegexpBasedAutoRunsSearchFilter } from '../../../../../common/utils/FeatureUtils';
 
 // A default placeholder for the search box
 const SEARCH_BOX_PLACEHOLDER = 'metrics.rmse < 1 and params.model = "tree"';
@@ -36,16 +37,21 @@ const WEEK_IN_SECONDS = 604800;
 
 export type RunsSearchAutoCompleteProps = {
   runsData: ExperimentRunsSelectorResult;
-  searchFacetsState: SearchExperimentRunsFacetsState;
-  updateSearchFacets: UpdateExperimentSearchFacetsFn;
-  requestError: ErrorWrapper | null;
+  searchFilter: string;
+  onSearchFilterChange: (newValue: string) => void;
+  onClear: () => void;
+  requestError: ErrorWrapper | Error | null;
 };
 
 /**
  * Autocomplete component that provides suggestions for MLflow search entity names.
  */
 export const RunsSearchAutoComplete = (props: RunsSearchAutoCompleteProps) => {
-  const { runsData, searchFacetsState, updateSearchFacets, requestError } = props;
+  const { runsData, searchFilter, requestError, onSearchFilterChange, onClear } = props;
+  const { theme, getPrefixedClassName } = useDesignSystemTheme();
+
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const intl = useIntl();
 
   const [text, setText] = useState<string>('');
   const [autocompleteEnabled, setAutocompleteEnabled] = useState<boolean | undefined>(undefined);
@@ -72,8 +78,8 @@ export const RunsSearchAutoComplete = (props: RunsSearchAutoCompleteProps) => {
 
   // Each time we're setting search filter externally, update it here as well
   useEffect(() => {
-    setText(searchFacetsState.searchFilter);
-  }, [searchFacetsState]);
+    setText(searchFilter);
+  }, [searchFilter]);
 
   const baseOptions = useMemo<OptionGroup[]>(() => {
     const existingEntityNames = existingEntityNamesRef.current;
@@ -95,16 +101,10 @@ export const RunsSearchAutoComplete = (props: RunsSearchAutoCompleteProps) => {
     }
     const currentEntitiesNames = newEntities.map((e) => e.name);
     const previousEntitiesNames = previousEntities.map((e) => e.name);
-    if (
-      !isEqual(currentEntitiesNames, previousEntitiesNames) &&
-      newEntities.length >= previousEntities.length
-    ) {
+    if (!isEqual(currentEntitiesNames, previousEntitiesNames) && newEntities.length >= previousEntities.length) {
       let i = 0;
       while (i < newEntities.length) {
-        if (
-          i >= previousEntities.length ||
-          newEntities[i].name.trim() !== previousEntities[i].name.trim()
-        ) {
+        if (i >= previousEntities.length || newEntities[i].name.trim() !== previousEntities[i].name.trim()) {
           setAutocompleteEnabled(true);
           setEntityBeingEdited(newEntities[i]);
           return;
@@ -155,11 +155,6 @@ export const RunsSearchAutoComplete = (props: RunsSearchAutoCompleteProps) => {
     [text, setText, entityBeingEdited, setAutocompleteEnabled],
   );
 
-  // Callback fired when "clear" button is clicked
-  const clearSearchFiltersState = useCallback(() => {
-    updateSearchFacets(clearSearchExperimentsFacetsFilters);
-  }, [updateSearchFacets]);
-
   const localStorageInstance = useExperimentViewLocalStore(TOOLTIP_COOKIE_KEY);
 
   const [showTooltipOnError, setShowTooltipOnError] = useState(() => {
@@ -168,7 +163,14 @@ export const RunsSearchAutoComplete = (props: RunsSearchAutoCompleteProps) => {
     // Show tooltip again if it was last shown 1 week ago or older
     return !storedItem || parseInt(storedItem, 10) < currentTimeSecs - WEEK_IN_SECONDS;
   });
-  const tooltipIcon = React.useRef<HTMLDivElement>(null);
+  const tooltipIcon = React.useRef<HTMLButtonElement>(null);
+
+  const quickRegexpFilter = useMemo(() => {
+    if (shouldUseRegexpBasedAutoRunsSearchFilter() && text.length > 0 && !detectSqlSyntaxInSearchQuery(text)) {
+      return createQuickRegexpSearchFilter(text);
+    }
+    return undefined;
+  }, [text]);
 
   // If requestError has changed and there is an error, pop up the tooltip
   useEffect(() => {
@@ -184,16 +186,21 @@ export const RunsSearchAutoComplete = (props: RunsSearchAutoCompleteProps) => {
   const noMatches = filteredOptions.flatMap((o) => o.options).length === 0;
   const open = autocompleteEnabled && focused && !noMatches;
 
-  // Callback fired when search filter is being used
+  // Callback fired when key is pressed on the input
   const triggerSearch: React.KeyboardEventHandler<HTMLInputElement> = useCallback(
     (e) => {
+      // Get the class name for the active item in the dropdown
+      const activeItemClass = getPrefixedClassName('select-item-option-active');
+      const dropdownContainsActiveItem = Boolean(dropdownRef.current?.querySelector(`.${activeItemClass}`));
+
       if (e.key === 'Enter') {
-        // If the autocomplete dialog is open, use the enter key to make a selection
-        // rather than initiate search.
+        // If the autocomplete dialog is open, close it
         if (open) {
           setAutocompleteEnabled(false);
-        } else {
-          updateSearchFacets({ searchFilter: text });
+        }
+        // If the autocomplete dialog is closed or user didn't select any item, trigger search
+        if (!open || !dropdownContainsActiveItem) {
+          onSearchFilterChange(text);
         }
       }
       if (e.key === 'Escape') {
@@ -203,69 +210,153 @@ export const RunsSearchAutoComplete = (props: RunsSearchAutoCompleteProps) => {
         }
       }
     },
-    [open, text, updateSearchFacets],
+    [open, text, onSearchFilterChange, getPrefixedClassName],
   );
 
   return (
-    <div css={styles.searchBox}>
+    <div
+      css={{
+        display: 'flex',
+        gap: theme.spacing.sm,
+        width: 430,
+        [theme.responsive.mediaQueries.xs]: {
+          width: 'auto',
+        },
+      }}
+    >
       <AutoComplete
         dropdownMatchSelectWidth={560}
-        css={{ width: 560 }}
+        css={{
+          width: 560,
+          [theme.responsive.mediaQueries.xs]: {
+            width: 'auto',
+          },
+        }}
         defaultOpen={false}
-        defaultActiveFirstOption
+        defaultActiveFirstOption={!shouldUseRegexpBasedAutoRunsSearchFilter()}
         open={open}
         options={filteredOptions}
         onSelect={onSelect}
         value={text}
-        data-test-id='runs-search-autocomplete'
-        dropdownRender={(menu) => <div css={styles.dropdownOverride}>{menu}</div>}
+        data-test-id="runs-search-autocomplete"
+        dropdownRender={(menu) => (
+          <div
+            css={{
+              '.du-bois-light-select-item-option-active:not(.du-bois-light-select-item-option-disabled)': {
+                // TODO: ask the design team about the color existing in the palette
+                backgroundColor: '#e6f1f5',
+              },
+            }}
+            ref={dropdownRef}
+          >
+            {menu}
+          </div>
+        )}
       >
         <Input
+          componentId="codegen_mlflow_app_src_experiment-tracking_components_experiment-page_components_runs_runssearchautocomplete.tsx_236"
           value={text}
-          prefix={<SearchIcon css={styles.searchBarIcon} />}
+          prefix={
+            <SearchIcon
+              css={{
+                svg: {
+                  width: theme.general.iconFontSize,
+                  height: theme.general.iconFontSize,
+                  color: theme.colors.textSecondary,
+                },
+              }}
+            />
+          }
           onKeyDown={triggerSearch}
           onClick={onFocus}
           onBlur={onBlur}
           onChange={(e) => setText(e.target.value)}
           placeholder={SEARCH_BOX_PLACEHOLDER}
-          data-test-id='search-box'
+          data-test-id="search-box"
           suffix={
-            <div css={styles.searchInputSuffix}>
+            <div css={{ display: 'flex', gap: 4, alignItems: 'center' }}>
               {text && (
-                <Button onClick={clearSearchFiltersState} type='link' data-test-id='clear-button'>
+                <Button
+                  componentId="codegen_mlflow_app_src_experiment-tracking_components_experiment-page_components_runs_runssearchautocomplete.tsx_212"
+                  onClick={onClear}
+                  type="link"
+                  data-test-id="clear-button"
+                >
                   <CloseIcon />
                 </Button>
               )}
-              <Tooltip
-                title={<RunsSearchTooltipContent />}
-                placement='right'
-                dangerouslySetAntdProps={{
-                  overlayInnerStyle: { width: '150%' },
-                  trigger: 'click',
-                }}
-              >
-                <div ref={tooltipIcon}>
-                  <InfoIcon css={styles.searchBarIcon} />
-                </div>
-              </Tooltip>
+              {quickRegexpFilter ? (
+                <Tooltip
+                  componentId="codegen_mlflow_app_src_experiment-tracking_components_experiment-page_components_runs_runssearchautocomplete.tsx_310"
+                  content={
+                    <FormattedMessage
+                      defaultMessage="Using regular expression quick filter. The following query will be used: {filterSample}"
+                      description="Experiment page > control bar > search filter > a label displayed when user has entered a simple query that will be automatically transformed into RLIKE SQL query before being sent to the API"
+                      values={{
+                        filterSample: (
+                          <div>
+                            <code>{quickRegexpFilter}</code>
+                          </div>
+                        ),
+                      }}
+                    />
+                  }
+                  delayDuration={0}
+                >
+                  <InfoFillIcon
+                    aria-label={intl.formatMessage(
+                      {
+                        defaultMessage:
+                          'Using regular expression quick filter. The following query will be used: {filterSample}',
+                        description:
+                          'Experiment page > control bar > search filter > a label displayed when user has entered a simple query that will be automatically transformed into RLIKE SQL query before being sent to the API',
+                      },
+                      {
+                        filterSample: quickRegexpFilter,
+                      },
+                    )}
+                    css={{
+                      svg: {
+                        width: theme.general.iconFontSize,
+                        height: theme.general.iconFontSize,
+                        color: theme.colors.actionPrimaryBackgroundDefault,
+                      },
+                    }}
+                  />
+                </Tooltip>
+              ) : (
+                <LegacyTooltip
+                  title={<RunsSearchTooltipContent />}
+                  placement="right"
+                  dangerouslySetAntdProps={{
+                    overlayInnerStyle: { width: '150%' },
+                    trigger: ['focus', 'click'],
+                  }}
+                >
+                  <Button
+                    size="small"
+                    ref={tooltipIcon}
+                    componentId="mlflow.experiment_page.search_filter.tooltip"
+                    type="link"
+                    css={{ marginLeft: -theme.spacing.xs, marginRight: -theme.spacing.xs }}
+                    icon={
+                      <InfoIcon
+                        css={{
+                          svg: {
+                            width: theme.general.iconFontSize,
+                            height: theme.general.iconFontSize,
+                            color: theme.colors.textSecondary,
+                          },
+                        }}
+                      />
+                    }
+                  />
+                </LegacyTooltip>
+              )}
             </div>
           }
         />
       </AutoComplete>
     </div>
   );
-};
-
-const styles = {
-  searchBox: (theme: Theme) => ({ display: 'flex', gap: theme.spacing.sm, width: 430 }),
-  searchBarIcon: (theme: Theme) => ({
-    svg: { width: 16, height: 16, color: theme.colors.textSecondary },
-  }),
-  searchInputSuffix: { display: 'flex', gap: 4, alignItems: 'center' },
-  dropdownOverride: {
-    '.du-bois-light-select-item-option-active:not(.du-bois-light-select-item-option-disabled)': {
-      // TODO: ask the design team about the color existing in the palette
-      backgroundColor: '#e6f1f5',
-    },
-  },
 };

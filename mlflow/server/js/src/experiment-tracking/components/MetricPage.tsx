@@ -16,12 +16,18 @@ import { getUUID } from '../../common/utils/ActionUtils';
 import { PageContainer } from '../../common/components/PageContainer';
 import { withRouterNext } from '../../common/utils/withRouterNext';
 import type { WithRouterNextProps } from '../../common/utils/withRouterNext';
+import { withErrorBoundary } from '../../common/utils/withErrorBoundary';
+import ErrorUtils from '../../common/utils/ErrorUtils';
+import Utils from '../../common/utils/Utils';
+import { injectIntl, type IntlShape } from 'react-intl';
 
 type MetricPageImplProps = {
   runUuids: string[];
   metricKey: string;
   experimentIds?: string[];
   dispatch: (...args: any[]) => any;
+  loadError?: unknown;
+  intl: IntlShape;
 };
 
 export class MetricPageImpl extends Component<MetricPageImplProps> {
@@ -42,6 +48,13 @@ export class MetricPageImpl extends Component<MetricPageImplProps> {
   }
 
   componentDidMount() {
+    if (this.props.loadError instanceof Error) {
+      const message = this.props.intl.formatMessage({
+        defaultMessage: 'Error during metric page load: invalid URL',
+        description: 'Error message when loading metric page fails',
+      });
+      Utils.displayGlobalErrorNotification(message);
+    }
     if (this.props.experimentIds !== null) {
       const getExperimentsRequestIds = this.fetchExperiments();
       this.requestIds.push(...getExperimentsRequestIds);
@@ -82,21 +95,35 @@ export class MetricPageImpl extends Component<MetricPageImplProps> {
 }
 
 const mapStateToProps = (state: any, ownProps: WithRouterNextProps<{ metricKey: string }>) => {
-  const { params, location } = ownProps;
+  const { location } = ownProps;
   const searchValues = qs.parse(location.search);
-  // @ts-expect-error TS(2345): Argument of type 'string | string[] | ParsedQs | P... Remove this comment to see the full error message
-  const runUuids = JSON.parse(searchValues['?runs']);
-  let experimentIds = null;
-  if (searchValues.hasOwnProperty('experiments')) {
+  try {
     // @ts-expect-error TS(2345): Argument of type 'string | string[] | ParsedQs | P... Remove this comment to see the full error message
-    experimentIds = JSON.parse(searchValues['experiments']);
+    const runUuids = JSON.parse(searchValues['?runs']);
+    // @ts-expect-error TS(2345): Argument of type 'string | string[] | ParsedQs | P... Remove this comment to see the full error message
+    const metricKey = JSON.parse(searchValues['metric']);
+    let experimentIds = null;
+    if (searchValues.hasOwnProperty('experiments')) {
+      // @ts-expect-error TS(2345): Argument of type 'string | string[] | ParsedQs | P... Remove this comment to see the full error message
+      experimentIds = JSON.parse(searchValues['experiments']);
+    }
+
+    return {
+      runUuids,
+      metricKey,
+      experimentIds,
+    };
+  } catch (e) {
+    return {
+      runUuids: [],
+      metricKey: '',
+      experimentIds: [],
+      loadError: e,
+    };
   }
-  const { metricKey } = params;
-  return {
-    runUuids,
-    metricKey,
-    experimentIds,
-  };
 };
 
-export const MetricPage = withRouterNext(connect(mapStateToProps)(MetricPageImpl));
+const MetricPageWithRouter = withRouterNext(connect(mapStateToProps)(injectIntl(MetricPageImpl)));
+
+export const MetricPage = withErrorBoundary(ErrorUtils.mlflowServices.EXPERIMENTS, MetricPageWithRouter);
+export default MetricPage;

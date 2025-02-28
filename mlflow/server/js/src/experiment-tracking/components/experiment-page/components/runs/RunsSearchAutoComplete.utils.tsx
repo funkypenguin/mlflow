@@ -28,7 +28,7 @@ export type EntityNameGroup = {
   tagNames: string[];
 };
 
-export const ATTRIBUTE_OPTIONS = [
+const ATTRIBUTE_OPTIONS = [
   'run_id',
   'run_name',
   'status',
@@ -48,10 +48,7 @@ export const getEntityNamesFromRunsData = (
 
   const metricNames = mergeDedup(existingNames.metricNames, newRunsData.metricKeyList);
   const paramNames = mergeDedup(existingNames.paramNames, newRunsData.paramKeyList);
-  const tagNames = mergeDedup(
-    getTagNames(existingNames.tagNames),
-    getTagNames(newRunsData.tagsList),
-  );
+  const tagNames = mergeDedup(getTagNames(existingNames.tagNames), getTagNames(newRunsData.tagsList));
   // Filter out internal tag names and wrap names that include control characters in backticks.
   const tagNamesCleaned = tagNames
     .filter((s: string) => !s.startsWith('mlflow.'))
@@ -98,10 +95,10 @@ const boldedText = (wholeText: string, shouldBeBold: string) => {
     // Override this here
     <span css={{ fontWeight: 'normal' }} data-test-id={wholeText}>
       {textArray.map((item, index) => (
-        <>
+        <React.Fragment key={index}>
           {item}
           {index !== textArray.length - 1 && match && <b>{match[index]}</b>}
-        </>
+        </React.Fragment>
       ))}
     </span>
   );
@@ -154,9 +151,7 @@ export const getFilteredOptionsFromEntityName = (
   return baseOptions
     .map((group) => {
       const newOptions = group.options
-        .filter((option) =>
-          option.value.toLowerCase().includes(entityBeingEdited.name.toLowerCase().trim()),
-        )
+        .filter((option) => option.value.toLowerCase().includes(entityBeingEdited.name.toLowerCase().trim()))
         .map((match) => ({
           value: match.value,
           label: boldedText(match.value, entityBeingEdited.name.trim()),
@@ -164,9 +159,7 @@ export const getFilteredOptionsFromEntityName = (
       const limitForGroup = (suggestionLimits as any)[group.label];
       const ellipsized = [
         ...newOptions.slice(0, limitForGroup),
-        ...(newOptions.length > limitForGroup
-          ? [{ label: '...', value: `..._${group.label}` }]
-          : []),
+        ...(newOptions.length > limitForGroup ? [{ label: '...', value: `..._${group.label}` }] : []),
       ];
       return {
         label: group.label,

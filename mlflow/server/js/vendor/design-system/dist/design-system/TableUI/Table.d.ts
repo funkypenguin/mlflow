@@ -2,9 +2,9 @@ import type { CSSProperties } from 'react';
 import React from 'react';
 import type { HTMLDataAttributes } from '../types';
 export declare const TableContext: React.Context<{
-    size: 'default' | 'small';
-    someRowsSelected?: boolean | undefined;
-    grid?: boolean | undefined;
+    size: "default" | "small";
+    someRowsSelected?: boolean;
+    grid?: boolean;
 }>;
 export interface TableProps extends HTMLDataAttributes {
     size?: 'default' | 'small';
@@ -22,8 +22,6 @@ export interface TableProps extends HTMLDataAttributes {
     children?: React.ReactNode | React.ReactNode[];
     /** Is this `Table` scrollable? Only use if `Table` is placed within a container of determinate height. */
     scrollable?: boolean;
-    /** Removes drop shadow for use cases without header */
-    headerHeight?: number;
     /** Adds grid styling to the table (e.g. border around cells and no hover styles) */
     grid?: boolean;
 }

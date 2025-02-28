@@ -1,5 +1,6 @@
 import os
 import pathlib
+import tempfile
 import time
 from datetime import datetime
 from unittest import mock
@@ -11,16 +12,9 @@ from pyspark.sql import SparkSession
 
 from mlflow.exceptions import MlflowException
 from mlflow.recipes.steps.ingest import IngestStep
+from mlflow.recipes.utils import _RECIPE_CONFIG_FILE_NAME
 from mlflow.store.artifact.s3_artifact_repo import S3ArtifactRepository
 from mlflow.utils.file_utils import read_yaml
-from mlflow.recipes.utils import _RECIPE_CONFIG_FILE_NAME
-
-# pylint: disable=unused-import
-from tests.recipes.helper_functions import (
-    tmp_recipe_root_path,
-    enter_recipe_example_directory,
-    enter_test_recipe_directory,
-)
 
 
 @pytest.fixture
@@ -38,19 +32,21 @@ def pandas_df():
 
 @pytest.fixture(scope="module")
 def spark_session():
-    with (
-        SparkSession.builder.master("local[*]")
-        .config("spark.jars.packages", "io.delta:delta-core_2.12:2.4.0")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config(
-            "spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog"
-        )
-        .getOrCreate()
-    ) as session:
-        yield session
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with (
+            SparkSession.builder.master("local[*]")
+            .config("spark.jars.packages", "io.delta:delta-spark_2.12:3.0.0")
+            .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+            .config(
+                "spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog"
+            )
+            .config("spark.sql.warehouse.dir", str(tmpdir))
+            .getOrCreate()
+        ) as session:
+            yield session
 
 
-@pytest.fixture()
+@pytest.fixture
 def spark_df(spark_session):
     return spark_session.createDataFrame(
         [
@@ -98,7 +94,7 @@ def test_ingests_parquet_successfully(use_relative_path, multiple_files, pandas_
     pd.testing.assert_frame_equal(reloaded_df, pandas_df)
 
 
-def custom_load_csv(file_path, file_format):  # pylint: disable=unused-argument
+def custom_load_csv(file_path, file_format):
     return pd.read_csv(file_path, index_col=0)
 
 
@@ -109,7 +105,7 @@ def test_ingests_custom_format(pandas_df, tmp_recipe_root_path, tmp_path):
     pandas_df_part2 = pandas_df[1:]
     pandas_df_part1.to_csv(dataset_path / "df1.csv")
     pandas_df_part2.to_csv(dataset_path / "df2.csv")
-    dataset_path = [f'{dataset_path / "df1.csv"}', f'{dataset_path / "df2.csv"}']
+    dataset_path = [f"{dataset_path / 'df1.csv'}", f"{dataset_path / 'df2.csv'}"]
 
     recipe_yaml = tmp_recipe_root_path.joinpath(_RECIPE_CONFIG_FILE_NAME)
     recipe_yaml.write_text(
@@ -164,7 +160,7 @@ def test_ingests_csv_successfully(
         dataset_path = pathlib.Path(os.path.relpath(dataset_path))
 
     if explicit_file_list and multiple_files:
-        dataset_path = [f'{dataset_path / "df1.csv"}', f'{dataset_path / "df2.csv"}']
+        dataset_path = [f"{dataset_path / 'df1.csv'}", f"{dataset_path / 'df2.csv'}"]
     else:
         dataset_path = str(dataset_path)
 
@@ -186,7 +182,7 @@ def test_ingests_csv_successfully(
     pd.testing.assert_frame_equal(reloaded_df, pandas_df)
 
 
-def custom_load_wine_csv(file_path, file_format):  # pylint: disable=unused-argument
+def custom_load_wine_csv(file_path, file_format):
     return pd.read_csv(file_path, sep=";")
 
 
@@ -217,7 +213,7 @@ def test_ingests_remote_http_datasets_with_multiple_files_successfully(tmp_path)
         assert reloaded_df.count()[0] == 6497
 
 
-def custom_load_file_as_dataframe(file_path, file_format):  # pylint: disable=unused-argument
+def custom_load_file_as_dataframe(file_path, file_format):
     return pd.read_csv(file_path, sep="#", index_col=0)
 
 
@@ -663,11 +659,15 @@ def test_ingest_throws_when_spark_unavailable_for_spark_based_dataset(spark_df, 
     dataset_path = tmp_path / "test.delta"
     spark_df.write.format("delta").save(str(dataset_path))
 
-    with mock.patch(
-        "mlflow.recipes.steps.ingest.datasets._get_active_spark_session",
-        side_effect=Exception("Spark unavailable"),
-    ), pytest.raises(
-        MlflowException, match="Encountered an error while searching for an active Spark session"
+    with (
+        mock.patch(
+            "mlflow.recipes.steps.ingest.datasets._get_active_spark_session",
+            side_effect=Exception("Spark unavailable"),
+        ),
+        pytest.raises(
+            MlflowException,
+            match="Encountered an error while searching for an active Spark session",
+        ),
     ):
         IngestStep.from_recipe_config(
             recipe_config={
@@ -688,11 +688,7 @@ def test_ingest_makes_spark_session_if_not_available_for_spark_based_dataset(spa
     dataset_path = tmp_path / "test.delta"
     spark_df.write.format("delta").save(str(dataset_path))
 
-    with mock.patch(
-        "mlflow.utils._spark_utils._get_active_spark_session",
-    ) as _get_active_spark_session:
-        _get_active_spark_session.return_value = None
-
+    with mock.patch("mlflow.utils._spark_utils._get_active_spark_session", return_value=None):
         IngestStep.from_recipe_config(
             recipe_config={
                 "target_col": "label",
@@ -870,13 +866,11 @@ def test_ingest_skips_profiling_when_specified(pandas_df, tmp_path):
 def test_ingests_spark_sql_datetime_successfully(spark_session, tmp_path):
     from pyspark.sql.functions import (
         col,
-        rand,
-        lit,
-        date_sub,
-        unix_timestamp,
-        to_timestamp,
         current_date,
         current_timestamp,
+        rand,
+        to_timestamp,
+        unix_timestamp,
     )
 
     spark = spark_session.builder.getOrCreate()

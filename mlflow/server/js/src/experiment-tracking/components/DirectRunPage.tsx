@@ -1,19 +1,21 @@
-import { PageWrapper, Skeleton } from '@databricks/design-system';
+import { PageWrapper, LegacySkeleton } from '@databricks/design-system';
 import { useEffect, useState } from 'react';
 import { connect, useDispatch } from 'react-redux';
-import { RouteComponentProps } from 'react-router';
-import { useParams, Navigate } from 'react-router-dom-v5-compat';
+import { useParams, useNavigate } from '../../common/utils/RoutingUtils';
 import { ErrorWrapper } from '../../common/utils/ErrorWrapper';
 import Utils from '../../common/utils/Utils';
-import { StateWithEntities } from '../../redux-types';
+import { ReduxState } from '../../redux-types';
 import { getRunApi } from '../actions';
 import Routes from '../routes';
-import { PageNotFoundView } from './PageNotFoundView';
+import { PageNotFoundView } from '../../common/components/PageNotFoundView';
 import { WithRouterNextProps, withRouterNext } from '../../common/utils/withRouterNext';
+import { withErrorBoundary } from '../../common/utils/withErrorBoundary';
+import ErrorUtils from '../../common/utils/ErrorUtils';
 
-export const DirectRunPageImpl = (props: any) => {
+const DirectRunPageImpl = (props: any) => {
   const { runUuid } = useParams<{ runUuid: string }>();
   const [error, setError] = useState<ErrorWrapper>();
+  const navigate = useNavigate();
 
   const dispatch = useDispatch();
 
@@ -34,31 +36,33 @@ export const DirectRunPageImpl = (props: any) => {
     }
   }, [dispatch, runUuid, props.runInfo]);
 
+  useEffect(() => {
+    if (props.runInfo?.experimentId) {
+      navigate(Routes.getRunPageRoute(props.runInfo.experimentId, props.runInfo.runUuid), {
+        replace: true,
+      });
+    }
+  }, [navigate, props.runInfo]);
+
   // If encountered 404 error, display a proper component
   if (error?.status === 404) {
     return <PageNotFoundView />;
   }
 
-  // If the run info is loaded, redirect to the run page
-  if (props.runInfo?.experiment_id) {
-    return (
-      <Navigate
-        to={Routes.getRunPageRoute(props.runInfo.experiment_id, props.runInfo.run_uuid)}
-        replace
-      />
-    );
-  }
-
   // If the run is loading, display skeleton
   return (
     <PageWrapper>
-      <Skeleton />
+      <LegacySkeleton />
     </PageWrapper>
   );
 };
 
-export const DirectRunPage = withRouterNext(
-  connect((state: StateWithEntities, ownProps: WithRouterNextProps<{ runUuid: string }>) => {
+const DirectRunPageWithRouter = withRouterNext(
+  connect((state: ReduxState, ownProps: WithRouterNextProps<{ runUuid: string }>) => {
     return { runInfo: state.entities.runInfosByUuid[ownProps.params.runUuid] };
   })(DirectRunPageImpl),
 );
+
+export const DirectRunPage = withErrorBoundary(ErrorUtils.mlflowServices.RUN_TRACKING, DirectRunPageWithRouter);
+
+export default DirectRunPage;

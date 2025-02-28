@@ -1,4 +1,5 @@
-/// <reference types="react" />
+import React from 'react';
+import type { TypographyTitleProps } from '../Typography/Title';
 import type { DangerousGeneralProps, HTMLDataAttributes } from '../types';
 export interface HeaderProps extends HTMLDataAttributes, DangerousGeneralProps {
     /** The title for this page */
@@ -8,7 +9,9 @@ export interface HeaderProps extends HTMLDataAttributes, DangerousGeneralProps {
     /** A single `<Breadcrumb />` component */
     breadcrumbs?: React.ReactNode;
     /** An array of Dubois `<Button />` components */
-    buttons?: React.ReactNode[];
+    buttons?: React.ReactNode | React.ReactNode[];
+    /** HTML title element level. This only controls the element rendered, title will look like a h2 */
+    titleElementLevel?: TypographyTitleProps['elementLevel'];
 }
 export declare const Header: React.FC<HeaderProps>;
 //# sourceMappingURL=Header.d.ts.map

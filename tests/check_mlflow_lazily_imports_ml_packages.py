@@ -2,10 +2,11 @@
 Tests that `import mlflow` and `mlflow.autolog()` do not import ML packages.
 """
 
-import sys
 import importlib
 import logging
-import mlflow  # pylint: disable=unused-import
+import sys
+
+import mlflow
 
 logger = logging.getLogger()
 
@@ -14,14 +15,11 @@ def main():
     ml_packages = {
         "catboost",
         "fastai",
-        "mxnet",
         "h2o",
-        "keras",
         "lightgbm",
         "mleap",
         "onnx",
         "pytorch_lightning",
-        "pyspark",
         "pyspark.ml",
         "shap",
         "sklearn",

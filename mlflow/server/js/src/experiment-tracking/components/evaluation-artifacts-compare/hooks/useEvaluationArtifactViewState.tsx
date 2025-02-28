@@ -1,21 +1,15 @@
 import { useEffect, useState } from 'react';
-import { SearchExperimentRunsViewState } from '../../experiment-page/models/SearchExperimentRunsViewState';
+import { ExperimentPageViewState } from '../../experiment-page/models/ExperimentPageViewState';
 import { UpdateExperimentViewStateFn } from '../../../types';
 
 export const useEvaluationArtifactViewState = (
-  viewState: SearchExperimentRunsViewState,
+  viewState: ExperimentPageViewState,
   updateViewState: UpdateExperimentViewStateFn,
 ) => {
   const { artifactViewState = {} } = viewState;
-
-  const [selectedTables, setSelectedTables] = useState<string[]>(
-    artifactViewState.selectedTables || [],
-  );
+  const [selectedTables, setSelectedTables] = useState<string[]>(artifactViewState.selectedTables || []);
   const [groupByCols, setGroupByCols] = useState<string[]>(artifactViewState.groupByCols || []);
   const [outputColumn, setOutputColumn] = useState(artifactViewState.outputColumn || '');
-  const [intersectingOnly, setIntersectingOnly] = useState(
-    artifactViewState.intersectingOnly || false,
-  );
 
   useEffect(
     () =>
@@ -24,20 +18,17 @@ export const useEvaluationArtifactViewState = (
           selectedTables,
           groupByCols,
           outputColumn,
-          intersectingOnly,
         },
       }),
-    [updateViewState, selectedTables, groupByCols, outputColumn, intersectingOnly],
+    [updateViewState, selectedTables, groupByCols, outputColumn],
   );
 
   return {
     selectedTables,
     groupByCols,
     outputColumn,
-    intersectingOnly,
     setSelectedTables,
     setGroupByCols,
     setOutputColumn,
-    setIntersectingOnly,
   };
 };

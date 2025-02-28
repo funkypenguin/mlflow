@@ -1,21 +1,22 @@
 """
 Getting started with Captum - Titanic Data Analysis
 """
+
 # Initial imports
-import numpy as np
-import torch
-from captum.attr import IntegratedGradients
-from captum.attr import LayerConductance
-from captum.attr import NeuronConductance
-import matplotlib.pyplot as plt
-import pandas as pd
-from scipy import stats
-import mlflow
-from prettytable import PrettyTable
-from sklearn.model_selection import train_test_split
 import os
 from argparse import ArgumentParser
-import torch.nn as nn
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import torch
+from captum.attr import IntegratedGradients, LayerConductance, NeuronConductance
+from prettytable import PrettyTable
+from scipy import stats
+from sklearn.model_selection import train_test_split
+from torch import nn
+
+import mlflow
 
 
 def get_titanic():
@@ -36,10 +37,9 @@ def get_titanic():
     Class1 : Binary var indicating whether passenger was in first class
     Class2 : Binary var indicating whether passenger was in second class
     Class3 : Binary var indicating whether passenger was in third class
-    url = "https://biostat.app.vumc.org/wiki/pub/Main/DataSets/titanic3.csv"
     """
-    url = "https://biostat.app.vumc.org/wiki/pub/Main/DataSets/titanic3.csv"
-    titanic_data = pd.read_csv(url)
+    data_path = "titanic3.csv"
+    titanic_data = pd.read_csv(data_path)
     titanic_data = pd.concat(
         [
             titanic_data,
@@ -52,21 +52,18 @@ def get_titanic():
 
     titanic_data["age"] = titanic_data["age"].fillna(titanic_data["age"].mean())
     titanic_data["fare"] = titanic_data["fare"].fillna(titanic_data["fare"].mean())
-    titanic_data = titanic_data.drop(
+    return titanic_data.drop(
         [
+            "passengerid",
             "name",
             "ticket",
             "cabin",
-            "boat",
-            "body",
-            "home.dest",
             "sex",
             "embarked",
             "pclass",
         ],
         axis=1,
     )
-    return titanic_data
 
 
 torch.manual_seed(1)  # Set seed for reproducibility.
@@ -131,7 +128,7 @@ def visualize_importances(
     feature_imp = PrettyTable(["feature_name", "importances"])
     feature_imp_dict = {}
     for i in range(len(feature_names)):
-        print(feature_names[i], ": ", "%.3f" % (importances[i]))
+        print(feature_names[i], ": ", f"{importances[i]:.3f}")
         feature_imp.add_row([feature_names[i], importances[i]])
         feature_imp_dict[str(feature_names[i])] = importances[i]
     x_pos = np.arange(len(feature_names))
@@ -170,11 +167,9 @@ def train(USE_PRETRAINED_MODEL=False):
             loss.backward()
             optimizer.step()
             if epoch % 50 == 0:
-                print(
-                    "Epoch {}/{} => Train Loss: {:.2f}".format(epoch + 1, num_epochs, loss.item())
-                )
+                print(f"Epoch {epoch + 1}/{num_epochs} => Train Loss: {loss.item():.2f}")
                 mlflow.log_metric(
-                    "Epoch {} Loss".format(str(epoch + 1)),
+                    f"Epoch {epoch + 1!s} Loss",
                     float(loss.item()),
                     step=epoch,
                 )
@@ -303,7 +298,7 @@ def neuron_conductance(net, test_input_tensor, neuron_selector=None):
     neuron_cond, _ = visualize_importances(
         feature_names,
         neuron_cond_vals.mean(dim=0).detach().numpy(),
-        title="Average Feature Importances for Neuron {}".format(neuron_selector),
+        title=f"Average Feature Importances for Neuron {neuron_selector}",
     )
     mlflow.log_text(
         str(neuron_cond), "Avg_Feature_Importances_Neuron_" + str(neuron_selector) + ".txt"

@@ -1,9 +1,13 @@
+import React from 'react';
+import { useState } from 'react';
 import {
   Button,
   Drawer,
   Header,
+  Spacer,
   TableIcon,
   Tag,
+  LegacyTooltip,
   Typography,
   useDesignSystemTheme,
 } from '@databricks/design-system';
@@ -11,20 +15,25 @@ import type { RunDatasetWithTags } from '../../../../types';
 import { MLFLOW_RUN_DATASET_CONTEXT_TAG } from '../../../../constants';
 import { ExperimentViewDatasetSchema } from './ExperimentViewDatasetSchema';
 import { ExperimentViewDatasetLink } from './ExperimentViewDatasetLink';
-import { Link } from 'react-router-dom-v5-compat';
+import { Link } from '../../../../../common/utils/RoutingUtils';
 import Routes from '../../../../routes';
-import React from 'react';
 import { FormattedMessage } from 'react-intl';
 import { ExperimentViewDatasetWithContext } from './ExperimentViewDatasetWithContext';
+import { RunColorPill } from '../RunColorPill';
+import { ExperimentViewDatasetSourceType } from './ExperimentViewDatasetSourceType';
+import { ExperimentViewDatasetSourceURL } from './ExperimentViewDatasetSourceURL';
+import { ExperimentViewDatasetDigest } from './ExperimentViewDatasetDigest';
+import { useSelector } from 'react-redux';
+import { ReduxState } from '../../../../../redux-types';
+import { useGetExperimentRunColor } from '../../hooks/useExperimentRunColor';
 
 export type DatasetWithRunType = {
   datasetWithTags: RunDatasetWithTags;
   runData: {
-    experimentId: string;
-    tags: Record<string, { key: string; value: string }>;
+    experimentId?: string;
+    tags?: Record<string, { key: string; value: string }>;
     runUuid: string;
-    runName: string;
-    color?: string;
+    runName?: string;
     datasets: RunDatasetWithTags[];
   };
 };
@@ -37,8 +46,9 @@ export interface DatasetsCellRendererProps {
 }
 
 const DRAWER_WITDH = '800px';
+const MAX_PROFILE_LENGTH = 80;
 
-export const ExperimentViewDatasetDrawer = ({
+const ExperimentViewDatasetDrawerImpl = ({
   isOpen,
   setIsOpen,
   selectedDatasetWithRun,
@@ -47,8 +57,16 @@ export const ExperimentViewDatasetDrawer = ({
   const { theme } = useDesignSystemTheme();
   const { datasetWithTags, runData } = selectedDatasetWithRun;
   const contextTag = selectedDatasetWithRun
-    ? datasetWithTags?.tags.find((tag) => tag.key === MLFLOW_RUN_DATASET_CONTEXT_TAG)
+    ? datasetWithTags?.tags?.find((tag) => tag.key === MLFLOW_RUN_DATASET_CONTEXT_TAG)
     : undefined;
+  const fullProfile =
+    datasetWithTags.dataset.profile && datasetWithTags.dataset.profile !== 'null'
+      ? datasetWithTags.dataset.profile
+      : undefined;
+
+  const getRunColor = useGetExperimentRunColor();
+  const { experimentId = '', tags = {} } = runData;
+
   return (
     <Drawer.Root
       open={isOpen}
@@ -59,34 +77,30 @@ export const ExperimentViewDatasetDrawer = ({
       }}
     >
       <Drawer.Content
+        componentId="codegen_mlflow_app_src_experiment-tracking_components_experiment-page_components_runs_experimentviewdatasetdrawer.tsx_81"
         title={
-          <div css={{ display: 'flex', alignItems: 'center' }}>
+          <div css={{ display: 'flex', alignItems: 'center', height: '100%' }}>
             <Typography.Title level={4} css={{ marginRight: theme.spacing.sm, marginBottom: 0 }}>
               <FormattedMessage
-                defaultMessage='Data details for '
-                description='Text for data details for the experiment run in the dataset drawer'
+                defaultMessage="Data details for "
+                description="Text for data details for the experiment run in the dataset drawer"
               />
             </Typography.Title>
-            <Link
-              to={Routes.getRunPageRoute(runData.experimentId, runData.runUuid)}
-              css={styles.runLink}
-            >
-              <div
-                data-testid='dataset-drawer-run-color'
-                css={{ ...styles.colorPill, backgroundColor: runData.color }}
-              />
+            <Link to={Routes.getRunPageRoute(experimentId, runData.runUuid)} css={styles.runLink}>
+              <RunColorPill color={getRunColor(runData.runUuid)} />
               <span css={styles.runName}>{runData.runName}</span>
             </Link>
           </div>
         }
         width={DRAWER_WITDH}
+        footer={<Spacer size="xs" />}
       >
         <div
           css={{
             display: 'flex',
-            flexDirection: 'row',
             borderTop: `1px solid ${theme.colors.border}`,
-            height: '100vh',
+            height: '100%',
+            marginLeft: -theme.spacing.sm,
           }}
         >
           {/* column for dataset selection */}
@@ -96,78 +110,100 @@ export const ExperimentViewDatasetDrawer = ({
               flexDirection: 'column',
               width: '300px',
               borderRight: `1px solid ${theme.colors.border}`,
+              height: '100%',
             }}
           >
             <Typography.Text
-              color='secondary'
+              color="secondary"
               css={{
                 marginBottom: theme.spacing.sm,
                 marginTop: theme.spacing.sm,
+                paddingLeft: theme.spacing.sm,
               }}
             >
               {runData.datasets.length}{' '}
               <FormattedMessage
-                defaultMessage='datasets used'
-                description='Text for dataset count in the experiment run dataset drawer'
+                defaultMessage="datasets used"
+                description="Text for dataset count in the experiment run dataset drawer"
               />
             </Typography.Text>
-            {runData.datasets.map((dataset) => (
-              <div
-                key={`${dataset.dataset.name}-${dataset.dataset.digest}`}
-                css={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: 'center',
-                  backgroundColor:
-                    dataset.dataset.name === datasetWithTags.dataset.name
-                      ? theme.colors.grey100
-                      : 'transparent',
-                  borderTop: `1px solid ${theme.colors.border}`,
-                  borderBottom: `1px solid ${theme.colors.border}`,
-                  paddingBottom: theme.spacing.sm,
-                  paddingTop: theme.spacing.sm,
-                }}
-              >
-                <Button
-                  type='link'
+            <div
+              css={{
+                display: 'flex',
+                flexDirection: 'column',
+                height: '100%',
+                overflow: 'auto',
+              }}
+              onWheel={(e) => e.stopPropagation()}
+            >
+              {runData.datasets.map((dataset) => (
+                <div
+                  key={`${dataset.dataset.name}-${dataset.dataset.digest}`}
                   css={{
-                    textAlign: 'left',
-                  }}
-                  onClick={() => {
-                    setSelectedDatasetWithRun({ datasetWithTags: dataset, runData: runData });
-                    setIsOpen(true);
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'center',
+                    backgroundColor:
+                      dataset.dataset.name === datasetWithTags.dataset.name &&
+                      dataset.dataset.digest === datasetWithTags.dataset.digest
+                        ? theme.colors.backgroundSecondary
+                        : 'transparent',
+                    borderTop: `1px solid ${theme.colors.border}`,
+                    paddingBottom: theme.spacing.sm,
+                    paddingTop: theme.spacing.sm,
+                    paddingLeft: theme.spacing.sm,
                   }}
                 >
-                  <ExperimentViewDatasetWithContext
-                    datasetWithTags={dataset}
-                    displayTextAsLink={false}
-                  />
-                </Button>
-              </div>
-            ))}
+                  <Button
+                    componentId="codegen_mlflow_app_src_experiment-tracking_components_experiment-page_components_runs_experimentviewdatasetdrawer.tsx_151"
+                    type="link"
+                    css={{
+                      textAlign: 'left',
+                      overflowX: 'auto',
+                      overflowY: 'hidden',
+                    }}
+                    onClick={() => {
+                      setSelectedDatasetWithRun({ datasetWithTags: dataset, runData: runData });
+                      setIsOpen(true);
+                    }}
+                  >
+                    <ExperimentViewDatasetWithContext datasetWithTags={dataset} displayTextAsLink={false} />
+                  </Button>
+                </div>
+              ))}
+            </div>
           </div>
           {/* column for dataset details */}
-          <div css={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
+          <div
+            css={{
+              overflow: 'hidden',
+              paddingLeft: theme.spacing.md,
+              paddingTop: theme.spacing.md,
+              display: 'flex',
+              flexDirection: 'column',
+              width: '100%',
+            }}
+          >
             {/* dataset metadata */}
-            <div css={{ display: 'flex', flexDirection: 'row' }}>
-              <div
-                css={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  marginLeft: theme.spacing.lg,
-                  marginBottom: theme.spacing.sm,
-                  marginTop: theme.spacing.sm,
-                }}
-              >
+            <div
+              css={{
+                display: 'flex',
+                gap: theme.spacing.sm,
+              }}
+            >
+              <div css={{ flex: '1' }}>
                 <Header
                   title={
                     <div css={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
                       <TableIcon css={{ marginRight: theme.spacing.xs }} />
-                      <Typography.Title level={3} css={{ marginBottom: 0 }}>
-                        {datasetWithTags.dataset.name}
-                      </Typography.Title>
+                      <LegacyTooltip title={datasetWithTags.dataset.name}>
+                        <Typography.Title ellipsis level={3} css={{ marginBottom: 0, maxWidth: 200 }}>
+                          {datasetWithTags.dataset.name}
+                        </Typography.Title>
+                      </LegacyTooltip>
                       {contextTag && (
                         <Tag
+                          componentId="codegen_mlflow_app_src_experiment-tracking_components_experiment-page_components_runs_experimentviewdatasetdrawer.tsx_206"
                           css={{
                             textTransform: 'capitalize',
                             marginLeft: theme.spacing.xs,
@@ -180,41 +216,53 @@ export const ExperimentViewDatasetDrawer = ({
                     </div>
                   }
                 />
-                <Typography.Title level={4} color='secondary' css={{ marginBottom: 0 }}>
-                  {datasetWithTags.dataset.digest},{' '}
-                  {datasetWithTags.dataset.profile ? (
-                    datasetWithTags.dataset.profile
+                <Typography.Title
+                  level={4}
+                  color="secondary"
+                  css={{ marginBottom: theme.spacing.xs, marginTop: theme.spacing.xs }}
+                  title={fullProfile}
+                >
+                  {datasetWithTags.dataset.profile && datasetWithTags.dataset.profile !== 'null' ? (
+                    datasetWithTags.dataset.profile.length > MAX_PROFILE_LENGTH ? (
+                      `${datasetWithTags.dataset.profile.substring(0, MAX_PROFILE_LENGTH)} ...`
+                    ) : (
+                      datasetWithTags.dataset.profile
+                    )
                   ) : (
                     <FormattedMessage
-                      defaultMessage='No profile available'
-                      description='Text for no profile available in the experiment run dataset drawer'
+                      defaultMessage="No profile available"
+                      description="Text for no profile available in the experiment run dataset drawer"
                     />
                   )}
                 </Typography.Title>
               </div>
-              <div css={{ display: 'flex', alignItems: 'center', marginLeft: 'auto' }}>
-                <ExperimentViewDatasetLink
-                  datasetWithTags={datasetWithTags}
-                  runTags={runData.tags}
-                />
-              </div>
+              <ExperimentViewDatasetLink datasetWithTags={datasetWithTags} runTags={tags} />
+            </div>
+            <div css={{ flexShrink: 0, display: 'flex', flexDirection: 'column', gap: theme.spacing.xs }}>
+              <ExperimentViewDatasetDigest datasetWithTags={datasetWithTags} />
+              <ExperimentViewDatasetSourceType datasetWithTags={datasetWithTags} />
+              <ExperimentViewDatasetSourceURL datasetWithTags={datasetWithTags} />
             </div>
             {/* dataset schema */}
             <div
               css={{
-                display: 'flex',
+                marginTop: theme.spacing.sm,
+                marginBottom: theme.spacing.xs,
                 borderTop: `1px solid ${theme.colors.border}`,
-                height: '100%',
+                opacity: 0.5,
               }}
-            >
-              <ExperimentViewDatasetSchema datasetWithTags={datasetWithTags} />
-            </div>
+            />
+            <ExperimentViewDatasetSchema datasetWithTags={datasetWithTags} />
           </div>
         </div>
       </Drawer.Content>
     </Drawer.Root>
   );
 };
+
+// Memoize the component so it rerenders only when props change directly, preventing
+// rerenders caused e.g. by the overarching context provider.
+export const ExperimentViewDatasetDrawer = React.memo(ExperimentViewDatasetDrawerImpl);
 
 const styles = {
   runLink: {
@@ -227,15 +275,5 @@ const styles = {
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     fontSize: '13px',
-  },
-  colorPill: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    flexShrink: 0,
-    // Straighten it up on retina-like screens
-    '@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi)': {
-      marginBottom: 1,
-    },
   },
 };

@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getMetricHistoryApiBulk } from '../../../actions';
-import type { MetricHistoryByName } from '../../../types';
-import { useAsyncDispatch } from '../../experiment-page/hooks/useAsyncDispatch';
-import type { CompareChartRunData } from '../charts/CompareRunsCharts.common';
+import type { RunInfoEntity } from '../../../types';
+
+import { useDispatch, useSelector } from 'react-redux';
+import { ReduxState, ThunkDispatch } from '../../../../redux-types';
+import { compact } from 'lodash';
+import { RunsChartsRunData } from '../../runs-charts/components/RunsCharts.common';
 
 /**
  * Automatically fetches metric history for runs, used in compare runs charts.
@@ -12,13 +15,16 @@ import type { CompareChartRunData } from '../charts/CompareRunsCharts.common';
 export const useFetchCompareRunsMetricHistory = (
   // We can fetch multiple metrics at once
   metricKeys: string[],
-  runsData: CompareChartRunData[],
-  currentStoreMetrics: Record<string, MetricHistoryByName>,
+  runsData: { runInfo?: RunInfoEntity }[],
+  maxResults?: number,
+  enabled = true,
 ) => {
-  const dispatch = useAsyncDispatch();
+  const dispatch = useDispatch<ThunkDispatch>();
 
   const [error, setError] = useState<any>(null);
   const [requests, setRequests] = useState<Record<string, boolean>>({});
+
+  const metricsByRunUuid = useSelector((store: ReduxState) => store.entities.metricsByRunUuid);
 
   /**
    * We store pending requests in "<run-id>-<metric-key>" format,
@@ -49,7 +55,7 @@ export const useFetchCompareRunsMetricHistory = (
   );
 
   const isLoading = useMemo(() => {
-    const runUuids = runsData.map((r) => r.runInfo.run_uuid);
+    const runUuids = compact(runsData.map((r) => r.runInfo?.runUuid));
     for (const uuid of runUuids) {
       for (const metric of metricKeys) {
         const isPendingRequest = requests[`${uuid}-${metric}`];
@@ -62,7 +68,7 @@ export const useFetchCompareRunsMetricHistory = (
   }, [metricKeys, requests, runsData]);
 
   useEffect(() => {
-    if (!metricKeys.length) {
+    if (!metricKeys.length || !enabled) {
       return;
     }
 
@@ -73,9 +79,9 @@ export const useFetchCompareRunsMetricHistory = (
 
       // Determine which runs does not have corresponding
       // metric history entries already fetched and stored
-      const runUuids = runsData.map((r) => r.runInfo.run_uuid);
+      const runUuids = compact(runsData.map((r) => r.runInfo?.runUuid));
       const runUuidsToFetch = runUuids.filter((runUuid) => {
-        const isInStore = Boolean(currentStoreMetrics[runUuid]?.[metricKey]);
+        const isInStore = Boolean(metricsByRunUuid[runUuid]?.[metricKey]);
         const isPendingRequest = requests[`${runUuid}-${metricKey}`];
         return !isInStore && !isPendingRequest;
       });
@@ -89,7 +95,7 @@ export const useFetchCompareRunsMetricHistory = (
 
       // Dispatch the action
       // @ts-expect-error TS(2554): Expected 4-5 arguments, but got 2.
-      dispatch(getMetricHistoryApiBulk(runUuidsToFetch, metricKey))
+      dispatch(getMetricHistoryApiBulk(runUuidsToFetch, metricKey, maxResults))
         .then(() => {
           // Settle request in the internal state if it's resolved
           settleRequests(runUuidsToFetch, metricKey);
@@ -99,7 +105,7 @@ export const useFetchCompareRunsMetricHistory = (
           setError(e);
         });
     }
-  }, [addRequests, currentStoreMetrics, dispatch, settleRequests, metricKeys, requests, runsData]);
+  }, [addRequests, metricsByRunUuid, dispatch, settleRequests, metricKeys, requests, runsData, maxResults, enabled]);
 
   return { isLoading, error };
 };

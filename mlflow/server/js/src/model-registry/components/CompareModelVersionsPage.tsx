@@ -10,18 +10,15 @@ import qs from 'qs';
 import { connect } from 'react-redux';
 import { getRunApi } from '../../experiment-tracking/actions';
 import { getUUID } from '../../common/utils/ActionUtils';
-import {
-  getRegisteredModelApi,
-  getModelVersionApi,
-  getModelVersionArtifactApi,
-  parseMlModelFile,
-} from '../actions';
+import { getRegisteredModelApi, getModelVersionApi, getModelVersionArtifactApi, parseMlModelFile } from '../actions';
 import RequestStateWrapper from '../../common/components/RequestStateWrapper';
 import { CompareModelVersionsView } from './CompareModelVersionsView';
 import _ from 'lodash';
 import { PageContainer } from '../../common/components/PageContainer';
 import { withRouterNext } from '../../common/utils/withRouterNext';
 import type { WithRouterNextProps } from '../../common/utils/withRouterNext';
+import { withErrorBoundary } from '../../common/utils/withErrorBoundary';
+import ErrorUtils from '../../common/utils/ErrorUtils';
 
 type CompareModelVersionsPageImplProps = {
   modelName: string;
@@ -82,12 +79,7 @@ export class CompareModelVersionsPageImpl extends Component<
         this.props
           .getModelVersionArtifactApi(modelName, modelVersion)
           .then((content: any) =>
-            this.props.parseMlModelFile(
-              modelName,
-              modelVersion,
-              content.value,
-              this.getMlModelFileRequestId,
-            ),
+            this.props.parseMlModelFile(modelName, modelVersion, content.value, this.getMlModelFileRequestId),
           )
           .catch(() => {
             // Failure of this call chain should not block the page. Here we remove
@@ -108,10 +100,7 @@ export class CompareModelVersionsPageImpl extends Component<
           requestIds={this.state.requestIds}
           requestIdsWith404sToIgnore={this.state.requestIdsWith404ErrorsToIgnore}
         >
-          <CompareModelVersionsView
-            modelName={this.props.modelName}
-            versionsToRuns={this.props.versionsToRuns}
-          />
+          <CompareModelVersionsView modelName={this.props.modelName} versionsToRuns={this.props.versionsToRuns} />
         </RequestStateWrapper>
       </PageContainer>
     );
@@ -136,6 +125,13 @@ const mapDispatchToProps = {
   parseMlModelFile,
 };
 
-export const CompareModelVersionsPage = withRouterNext(
+const CompareModelVersionsPageWithRouter = withRouterNext(
   connect(mapStateToProps, mapDispatchToProps)(CompareModelVersionsPageImpl),
 );
+
+export const CompareModelVersionsPage = withErrorBoundary(
+  ErrorUtils.mlflowServices.MODEL_REGISTRY,
+  CompareModelVersionsPageWithRouter,
+);
+
+export default CompareModelVersionsPage;

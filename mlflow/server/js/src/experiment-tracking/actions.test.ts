@@ -10,6 +10,7 @@ import thunk from 'redux-thunk';
 import promiseMiddleware from 'redux-promise-middleware';
 import {
   fetchMissingParents,
+  fetchMissingParentsWithSearchRuns,
   getEvaluationTableArtifact,
   getParentRunIdsToFetch,
   getParentRunTagName,
@@ -20,6 +21,7 @@ import { fetchEvaluationTableArtifact } from './sdk/EvaluationArtifactService';
 import { ViewType } from './sdk/MlflowEnums';
 import { MlflowService } from './sdk/MlflowService';
 import { RunLoggedArtifactType } from './types';
+import { getUUID } from '@mlflow/mlflow/src/common/utils/ActionUtils';
 
 jest.mock('./sdk/EvaluationArtifactService', () => ({
   fetchEvaluationTableArtifact: jest.fn(),
@@ -50,19 +52,39 @@ const b = {
 const aParent = { info: { run_id: 'aParent' } };
 const bParent = { info: { run_id: 'bParent' } };
 
+// When fetching missing parent runs, the filter string is expected to be in the form:
+// "run_id = 'parent_run_id'"
+const FETCH_PARENT_FILTER_PREFIX = 'run_id = ';
+
+// Extract parent run_id from the filter string
+const getParentRunIdFromFilter = (filter: string) => filter.split(FETCH_PARENT_FILTER_PREFIX)[1].replace(/'/g, '');
+
 beforeEach(() => {
-  jest
-    .spyOn(MlflowService, 'searchRuns')
-    .mockImplementation(() => Promise.resolve({ runs: [a, b, aParent] }));
+  // searchRuns is used distinctly for fetching initial runs and fetching missing parent runs
+  // Filtering by a single run_id indicates fetching a missing parent run
+  jest.spyOn(MlflowService, 'searchRuns').mockImplementation(({ filter }) => {
+    if (filter?.includes(FETCH_PARENT_FILTER_PREFIX)) {
+      return Promise.resolve({ runs: [{ info: { run_id: getParentRunIdFromFilter(filter) } }] } as any);
+    } else {
+      return Promise.resolve({ runs: [a, b, aParent] } as any);
+    }
+  });
 
   jest
     .spyOn(MlflowService, 'getRun')
-    .mockImplementation((data) => Promise.resolve({ run: { info: { run_id: data.run_id } } }));
+    .mockImplementation((data) => Promise.resolve({ run: { info: { run_id: data.run_id } } } as any));
+
+  jest.spyOn(MlflowService, 'createRun').mockImplementation((data) =>
+    Promise.resolve({
+      run: { info: { run_id: getUUID(), experiment_id: data.experiment_id } as any },
+    }),
+  );
 });
 
 afterEach(() => {
   (MlflowService.searchRuns as any).mockRestore();
   (MlflowService.getRun as any).mockRestore();
+  (MlflowService.createRun as any).mockRestore();
 });
 
 describe('fetchMissingParents', () => {
@@ -102,7 +124,7 @@ describe('fetchMissingParents', () => {
 
     jest.spyOn(MlflowService, 'getRun').mockImplementation((data) => {
       if (data.run_id === 'aParent') {
-        return Promise.resolve({ run: { info: { run_id: data.run_id } } });
+        return Promise.resolve({ run: { info: { run_id: data.run_id } } }) as any;
       } else {
         return Promise.reject(mockParentRunDeletedError);
       }
@@ -113,7 +135,6 @@ describe('fetchMissingParents', () => {
       expect(runs).toEqual({ runs: [a, b, aParent] });
     });
   });
-
   it('should throw for unexpected exceptions encountered during run resolution', async () => {
     const mockUnexpectedGetRunError = {
       getErrorCode() {
@@ -121,12 +142,92 @@ describe('fetchMissingParents', () => {
       },
     };
 
-    jest
-      .spyOn(MlflowService, 'getRun')
-      .mockImplementation(() => Promise.reject(mockUnexpectedGetRunError));
+    jest.spyOn(MlflowService, 'getRun').mockImplementation(() => Promise.reject(mockUnexpectedGetRunError));
 
     const res = { runs: [a, b] };
     await expect(fetchMissingParents(res)).rejects.toEqual(mockUnexpectedGetRunError);
+  });
+});
+
+describe('fetchMissingParentsWithSearchRuns', () => {
+  it('should not explode if no runs', () => {
+    const res = { nextPageToken: 'something' };
+    expect(fetchMissingParentsWithSearchRuns(res, 'mock_id')).toBe(res);
+  });
+
+  it('should return res if runs empty', () => {
+    const res = {
+      runs: [],
+      nextPageToken: 'something',
+    };
+    expect(fetchMissingParentsWithSearchRuns(res, 'mock_id')).toEqual(res);
+  });
+
+  it('should merge received parent runs', () => {
+    const res = { runs: [a, b] };
+    return fetchMissingParentsWithSearchRuns(res, 'mock_id').then((runs: any) => {
+      expect(runs).toEqual({ runs: [a, b, aParent, bParent] });
+    });
+  });
+
+  it('should return given runs even if no parent runs', () => {
+    const res = { runs: [a, b, aParent, bParent] };
+    return fetchMissingParentsWithSearchRuns(res, 'mock_id').then((runs: any) => {
+      expect(runs).toEqual({ runs: [a, b, aParent, bParent] });
+    });
+  });
+
+  it('should handle deleted parent runs', () => {
+    const mockParentRunDeletedError = {
+      getErrorCode() {
+        return 'RESOURCE_DOES_NOT_EXIST';
+      },
+    };
+
+    jest.spyOn(MlflowService, 'searchRuns').mockImplementation(({ filter }) => {
+      if (filter?.includes(FETCH_PARENT_FILTER_PREFIX)) {
+        // Mock bParent as deleted
+        if (getParentRunIdFromFilter(filter) === 'bParent') {
+          return Promise.reject(mockParentRunDeletedError);
+        } else {
+          return Promise.resolve({ runs: [{ info: { run_id: getParentRunIdFromFilter(filter) } }] } as any);
+        }
+      } else {
+        return Promise.resolve({ runs: [a, b, aParent] } as any);
+      }
+    });
+
+    const res = { runs: [a, b] };
+    return fetchMissingParentsWithSearchRuns(res, 'mock_id').then((runs: any) => {
+      expect(runs).toEqual({ runs: [a, b, aParent] });
+    });
+  });
+  it('should throw for unexpected exceptions encountered during run resolution', async () => {
+    const mockUnexpectedGetRunError = {
+      getErrorCode() {
+        return 'INTERNAL_ERROR';
+      },
+    };
+
+    jest.spyOn(MlflowService, 'searchRuns').mockImplementation(() => Promise.reject(mockUnexpectedGetRunError));
+
+    const res = { runs: [a, b] };
+    await expect(fetchMissingParentsWithSearchRuns(res, 'mock_id')).rejects.toEqual(mockUnexpectedGetRunError);
+  });
+});
+
+describe('createRun', () => {
+  it('should create a run under the correct experiment', async () => {
+    expect(await MlflowService.createRun({ experiment_id: '1' })).toEqual(
+      expect.objectContaining({
+        run: expect.objectContaining({
+          info: expect.objectContaining({
+            experiment_id: '1',
+            run_id: expect.any(String),
+          }),
+        }),
+      }),
+    );
   });
 });
 
@@ -143,16 +244,13 @@ describe('getParentRunIdsToFetch', () => {
   });
 });
 
-describe('searchRunsPayload', () => {
+const searchRunsPayloadTests = () => {
   it('should fetch parents only if shouldFetchParents is true', async () => {
     await searchRunsPayload({}).then((res) => {
       expect(res).toEqual(expect.objectContaining({ runs: [a, b, aParent] }));
     });
     await searchRunsPayload({ shouldFetchParents: false }).then((res) => {
       expect(res).toEqual(expect.objectContaining({ runs: [a, b, aParent] }));
-    });
-    await searchRunsPayload({ shouldFetchParents: true }).then((res) => {
-      expect(res).toEqual(expect.objectContaining({ runs: [a, b, aParent, bParent] }));
     });
     await searchRunsPayload({ shouldFetchParents: true }).then((res) => {
       expect(res).toEqual(expect.objectContaining({ runs: [a, b, aParent, bParent] }));
@@ -188,9 +286,9 @@ describe('searchRunsPayload', () => {
     // a specialized set of runs when asked for pinned runs
     jest.spyOn(MlflowService, 'searchRuns').mockImplementation(({ filter }) => {
       if (filter?.includes('run_id IN')) {
-        return Promise.resolve({ runs: [b] });
+        return Promise.resolve({ runs: [b] }) as any;
       }
-      return Promise.resolve({ runs: [a] });
+      return Promise.resolve({ runs: [a] }) as any;
     });
     const result = await searchRunsPayload({
       runsPinned: [b.info.run_id],
@@ -226,15 +324,21 @@ describe('searchRunsPayload', () => {
     );
   });
   it('should mark additionally fetched parent runs as correctly filtered ones', async () => {
+    const result = await searchRunsPayload({ shouldFetchParents: true });
+    expect(result.runsMatchingFilter).toEqual(expect.arrayContaining([bParent]));
+  });
+  it('throws proper error when received an invalid response', async () => {
     jest
       .spyOn(MlflowService, 'searchRuns')
-      .mockImplementation(() => Promise.resolve({ runs: [a] }));
-    jest
-      .spyOn(MlflowService, 'getRun')
-      .mockImplementation((data) => Promise.resolve({ run: aParent }));
-    const result = await searchRunsPayload({ shouldFetchParents: true });
-    expect(result.runsMatchingFilter).toEqual(expect.arrayContaining([aParent]));
+      .mockImplementation(() => Promise.resolve('this is a non-object response') as any);
+    await expect(async () => searchRunsPayload({ shouldFetchParents: true })).rejects.toThrow(
+      /Invalid format of the runs search response/,
+    );
   });
+};
+
+describe('searchRunsPayload', () => {
+  searchRunsPayloadTests();
 });
 
 describe('getEvaluationArtifact', () => {

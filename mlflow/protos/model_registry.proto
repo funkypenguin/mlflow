@@ -172,6 +172,7 @@ service ModelRegistryService {
       visibility: PUBLIC,
       rpc_doc_title: "Search ModelVersions",
     };
+    option (graphql) = {};
   }
 
   rpc getModelVersionDownloadUri (GetModelVersionDownloadUri) returns (GetModelVersionDownloadUri.Response) {
@@ -636,7 +637,6 @@ message SetRegisteredModelTag {
   optional string key = 2 [(validate_required) = true];
 
   // String value of the tag being logged. Maximum size depends on storage backend.
-  // All storage backends are guaranteed to support key values up to 5000 bytes in size.
   optional string value = 3 [(validate_required) = true];
 
   message Response {
@@ -658,7 +658,6 @@ message SetModelVersionTag {
   optional string key = 3 [(validate_required) = true];
 
   // String value of the tag being logged. Maximum size depends on storage backend.
-  // All storage backends are guaranteed to support key values up to 5000 bytes in size.
   optional string value = 4 [(validate_required) = true];
 
   message Response {
